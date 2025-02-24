@@ -1,0 +1,25 @@
+services:
+  ollama-services:
+    image: ollama/ollama:latest
+    container_name: ollama-services
+    networks:
+      - bot_network
+    volumes:
+      - ollama:/root/.ollama
+      - ~/.ollama/models:/root/.ollama/models
+
+  discord-bot:
+    build: .
+    container_name: discord-bot
+    networks:
+      - bot_network
+    depends_on:
+      - ollama-services
+
+volumes:
+    ollama:
+      driver: local
+networks:
+  bot_network:
+    driver: bridge
+
