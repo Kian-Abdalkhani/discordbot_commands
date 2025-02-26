@@ -23,15 +23,12 @@ async def on_ready():
 
 @client.event
 async def on_message(message):
-    # if message is from boug bot
-    if message.author == client.user:
-        return
 
-        # if user @'s boug bot
+        # if user @'s bot on in a text channel
     if client.user.mentioned_in(message):  # type: ignore
         member_name = close_members.get(str(message.author))
 
-        # if user is in boug bot's database
+        # if user is in bot's database
         if type(member_name) == str:
             await message.channel.send(bot_response(prompt=f"{member_name}:{message.content}"))
 
@@ -39,4 +36,4 @@ async def on_message(message):
             await message.channel.send(bot_response(prompt=message.content))
 
 
-client.run(token=os.getenv("BOT_TOKEN"))  # type: ignore
+client.run(token=os.getenv("BOT_TOKEN"))
