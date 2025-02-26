@@ -15,6 +15,10 @@ services:
       - bot_network
     depends_on:
       - ollama-services
+    develop:
+      watch:
+        - action: rebuild
+          path: ./
 
 volumes:
     ollama:
