@@ -5,7 +5,7 @@ from ollama import ChatResponse
 client: Client = Client(host="ollama-services:11434")
 
 #FIXME: need to remove deepseek's '<think>' portions of it's response
-def bot_response(user: str = "user", prompt: str = None) -> str:
+def bot_response(user: str = "user", prompt: str = "") -> str:
   """
   Create a chat response from the Ollama bot.
   :param user: "user" or "system", the source of the prompt.
@@ -15,11 +15,11 @@ def bot_response(user: str = "user", prompt: str = None) -> str:
 
   if user not in ["system", "user"]:
     raise ValueError(f"{user} is not a Invalid user, please use 'system' or 'user'")
-  if prompt is None:
+  if prompt == "":
     raise ValueError("Please enter a prompt.")
 
   #send prompt to desired LLM model
-  response: ChatResponse = client.chat(model="deepseek-r1:1.5b",messages=[
+  response: ChatResponse = client.chat(model="artifish/llama3.2-uncensored:latest",messages=[
     {
       'role': user,
       'content': prompt,
@@ -27,3 +27,6 @@ def bot_response(user: str = "user", prompt: str = None) -> str:
   ])
 
   return response['message']['content']
+
+if __name__ == "__main__":
+  print(bot_response(prompt=""))
