@@ -1,8 +1,6 @@
 import pytest
 from ..bot_llm import bot_response
 
-
-#TODO: Create a mocker for the ollama API
 def test_bot_response_blank():
     with pytest.raises(ValueError):
         bot_response(prompt="")

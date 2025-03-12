@@ -1,8 +1,11 @@
 from ollama import Client
 from ollama import ChatResponse
 
-#FIXME: need to remove deepseek's '<think>' portions of it's response
-def bot_response(user: str = "user", prompt: str = "", client: Client = None) -> str:
+#enter the model from ollama that you would like to use:
+OLLAMA_MODEL: str="boug_bot:HC"
+
+#TODO: make this method asynchronous using the asyncio and aiohttp packages
+def bot_response(user: str = "user", prompt: str = "") -> str:
   """
   Create a chat response from the Ollama bot.
   :param user: "user" or "system", the source of the prompt.
@@ -17,9 +20,8 @@ def bot_response(user: str = "user", prompt: str = "", client: Client = None) ->
     raise ValueError("Please enter a prompt.")
 
   # connect to ollama
-  if client is None:
-    client: Client = Client(host="http://localhost:11434")
-  response: ChatResponse = client.chat(model="artifish/llama3.2-uncensored:latest",messages=[
+  client: Client = Client(host="http://127.0.0.1:11434")
+  response: ChatResponse = client.chat(model=OLLAMA_MODEL,messages=[
     {
       'role': user,
       'content': prompt,
@@ -27,6 +29,3 @@ def bot_response(user: str = "user", prompt: str = "", client: Client = None) ->
   ])
 
   return response['message']['content']
-
-if __name__ == "__main__":
-  print(bot_response(prompt=""))
