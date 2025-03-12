@@ -1,3 +1,4 @@
+from httpx import HTTPError, HTTPStatusError
 from ollama import Client
 from ollama import ChatResponse
 
@@ -20,7 +21,12 @@ def bot_response(user: str = "user", prompt: str = "") -> str:
     raise ValueError("Please enter a prompt.")
 
   # connect to ollama
-  client: Client = Client(host="http://127.0.0.1:11434")
+  client: Client | None = None
+  try:
+    client: Client = Client(host="http://127.0.0.1:11434")
+  except HTTPStatusError:
+    ConnectionError("Could not connect to Ollama, please ensure Ollama is running.")
+
   response: ChatResponse = client.chat(model=OLLAMA_MODEL,messages=[
     {
       'role': user,
