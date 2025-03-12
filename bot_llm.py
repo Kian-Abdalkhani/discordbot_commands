@@ -21,17 +21,18 @@ def bot_response(user: str = "user", prompt: str = "") -> str:
     raise ValueError("Please enter a prompt.")
 
   # connect to ollama
-  client: Client | None = None
-  try:
-    client: Client = Client(host="http://127.0.0.1:11434")
-  except HTTPStatusError:
-    ConnectionError("Could not connect to Ollama, please ensure Ollama is running.")
+  client: Client = Client(host="http://127.0.0.1:11434")
 
-  response: ChatResponse = client.chat(model=OLLAMA_MODEL,messages=[
-    {
-      'role': user,
-      'content': prompt,
-    },
-  ])
+  try:
+    response: ChatResponse = client.chat(model=OLLAMA_MODEL,messages=[
+      {
+        'role': user,
+        'content': prompt,
+      },
+    ])
+  except ConnectionError:
+    raise ConnectionError("Could not connect to Ollama, please ensure Ollama is running.")
 
   return response['message']['content']
+
+bot_response(prompt="Hello, I'm Ollama!")
