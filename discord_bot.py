@@ -1,3 +1,4 @@
+from typing import Dict, Optional
 import discord
 import os
 from dotenv import load_dotenv
@@ -5,35 +6,97 @@ import json
 
 from bot_llm import bot_response
 
-load_dotenv()
+class DiscordBot:
+    """Discord bot that responds when mentioned by user."""
 
-#include a json string of close members in your discord for bot to recall
-dict_string: str = os.environ.get("CORD_MEMBERS")
-close_members: dict = json.loads(dict_string)
+    def __init__(self):
+        """Initialize the Discord bot with configuration from environment variables."""
+        load_dotenv()
 
-intents = discord.Intents.default()
-intents.message_content = True
-client = discord.Client(intents=intents)
+        self.close_members = self.load_members()
 
+        self.intents = discord.Intents.default()
+        self.client = discord.Client(intents=self.intents)
 
-@client.event
-async def on_ready():
-    print(f'We have logged in as {client.user}')
+        self.client.event(self.on_ready)
+        self.client.event(self.on_message)
 
+    def load_members(self) -> Dict[str,str]:
+        """Load member information from environment variables
 
-@client.event
-async def on_message(message):
+        Returns:
+            Dict Mapping member IDs to names
 
-        # if user @'s bot on in a text channel
-    if client.user.mentioned_in(message):  # type: ignore
-        member_name = close_members.get(str(message.author))
+        Raises:
+            json.JSONDecodeError: If the JSON string is malformed
+        """
+        dict_string: str = os.environ.get("CORD_MEMBERS")
+        return json.loads(dict_string)
 
-        # if user is in bot's database
-        if type(member_name) == str:
-            await message.channel.send(bot_response(prompt=f"{member_name}:{message.content}"))
+    async def on_ready(self):
+        """Event handler for when bot has connected to Discord."""
+        print(f'We have logged in as {self.client.user}')
 
+    async def on_message(self,message: discord.Message):
+        """Event handler for when a message is received.
+        Args:
+            message: The Discord message object
+        """
+        #only respond when mentioned
+        if self.client.user.mentioned_in(message):
+            await self.process_mention(message)
+
+    async def process_mention(self,message: discord.Message):
+        """Process a message where the bot was mentioned
+        Args:
+            message: The Discord message object
+        """
+        member_id = str(message.author.id)
+        member_name = self.get_member_name(member_id)
+
+        if member_name in self.close_members:
+            prompt = f"{member_name}:{message.content}"
         else:
-            await message.channel.send(bot_response(prompt=message.content))
+            prompt = message.content
+
+        response = self.generate_response(prompt)
+        await message.channel.send(response)
+
+    def get_member_name(self, member_id: str) -> Optional[str]:
+        """Get a member's name from the database.
+
+                Args:
+                    member_id: The Discord member ID.
+
+                Returns:
+                    The member's name or None if not found.
+                """
+        member_name = self.close_members.get(member_id)
+        return member_name if isinstance(member_name, str) else None
+
+    def generate_response(self, prompt: str) -> str:
+        """Generate a response using the bot_llm module.
+
+                Args:
+                    prompt: The prompt to send to the LLM.
+
+                Returns:
+                    The generated response.
+                """
+        return bot_response(prompt=prompt)
+
+    def run(self):
+        """Run the Discord bot."""
+        token = os.getenv("BOT_TOKEN")
+        if not token:
+            raise ValueError("BOT_TOKEN environment variable not set")
+        self.client.run(token=token)
 
 
-client.run(token=os.getenv("BOT_TOKEN"))
+def main():
+    """Main entry point for the bot."""
+    bot = DiscordBot()
+    bot.run()
+
+if __name__ == "__main__":
+    main()
