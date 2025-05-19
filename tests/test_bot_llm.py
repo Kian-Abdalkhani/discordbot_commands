@@ -1,5 +1,5 @@
 import pytest
-from ..bot_llm import bot_response
+from src.bot_llm import bot_response
 
 #tests blank prompts
 def test_bot_response_blank():
