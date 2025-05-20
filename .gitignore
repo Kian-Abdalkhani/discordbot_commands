@@ -163,4 +163,3 @@ cython_debug/
 #.idea/
 
 /data/quotes.json
-/.idea/.gitignore
