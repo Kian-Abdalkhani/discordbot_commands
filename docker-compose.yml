@@ -6,7 +6,7 @@ services:
       - ollama
     environment:
       - OLLAMA_API_URL=http://ollama:11434
-      - DISCORD_API_KEY=${DISCORD_API_KEY}
+      - BOT_TOKEN=${BOT_TOKEN}
     restart: unless-stopped
 
   ollama:

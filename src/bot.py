@@ -33,7 +33,7 @@ def create_bot():
             return
         if bot.user.mentioned_in(message):
             logger.info(f"{message.author} mentioned bot in {message.channel}")
-            response = bot_response(message.content)
+            response = bot_response(prompt=message.content)
             await message.channel.send(response)
 
         await bot.process_commands(message)

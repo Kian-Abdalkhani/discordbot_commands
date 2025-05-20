@@ -8,7 +8,7 @@ OLLAMA_MODEL: str="boug_bot:HC"
 
 # Only create the client when needed, not at import time
 def get_client():
-    return Client(host="http://127.0.0.1:11434")
+    return Client(host=os.getenv("OLLAMA_API_URL"))
 
 #TODO: make this method asynchronous using the asyncio and aiohttp packages
 def bot_response(user: str = "user", prompt: str = "") -> str:
