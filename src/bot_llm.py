@@ -1,11 +1,14 @@
 from httpx import HTTPError, HTTPStatusError
 from ollama import Client
 from ollama import ChatResponse
+import os
 
 #enter the model from ollama that you would like to use and connect to Ollama:
 OLLAMA_MODEL: str="boug_bot:HC"
 
-client: Client = Client(host="http://127.0.0.1:11434")
+# Only create the client when needed, not at import time
+def get_client():
+    return Client(host="http://127.0.0.1:11434")
 
 #TODO: make this method asynchronous using the asyncio and aiohttp packages
 def bot_response(user: str = "user", prompt: str = "") -> str:
@@ -23,6 +26,7 @@ def bot_response(user: str = "user", prompt: str = "") -> str:
     raise ValueError("Please enter a prompt.")
 
   try:
+    client = get_client()
     response: ChatResponse = client.chat(model=OLLAMA_MODEL,messages=[
       {
         'role': user,
@@ -34,4 +38,6 @@ def bot_response(user: str = "user", prompt: str = "") -> str:
 
   return response['message']['content']
 
-bot_response(prompt="Hello, I'm Ollama!")
+# Only make the API call if this file is run directly, not when imported
+if __name__ == "__main__":
+    bot_response(prompt="Hello, I'm Ollama!")

@@ -9,5 +9,14 @@ dependencies = [
     "ollama>=0.4.8",
     "pytest>=8.3.5",
     "pytest-mock>=3.14.0",
+    "pytest-asyncio>=0.23.5",
     "python-dotenv>=1.1.0",
+]
+
+[tool.pytest]
+asyncio_mode = "auto"
+
+[tool.pytest.ini_options]
+markers = [
+    "asyncio: mark a test as an asyncio test",
 ]
