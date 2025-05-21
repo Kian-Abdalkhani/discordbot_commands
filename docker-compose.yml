@@ -7,6 +7,8 @@ services:
     environment:
       - OLLAMA_API_URL=http://ollama:11434
       - BOT_TOKEN=${BOT_TOKEN}
+    volumes:
+      - ./data:/app/data
     restart: unless-stopped
 
   ollama:
