@@ -11,6 +11,7 @@ class TestGamesCog:
     def bot(self):
         bot = MagicMock(spec=commands.Bot)
         bot.wait_for = AsyncMock()
+        bot.fetch_user = AsyncMock()
         return bot
 
     @pytest.fixture
@@ -383,3 +384,131 @@ class TestGamesCog:
 
         # Verify reactions were cleared at the end
         assert game_message_mock.clear_reactions.called
+
+    @pytest.mark.asyncio
+    async def test_blackjack_stats_single_user(self, cog, ctx, monkeypatch):
+        # Test the blackjack_stats command for a single user
+
+        # Create a test user
+        test_user = MagicMock(spec=discord.Member)
+        test_user.id = 12345
+        test_user.display_name = "TestUser"
+
+        # Set up test stats
+        cog.blackjack_stats = {
+            "12345": {"wins": 5, "losses": 3, "ties": 2}
+        }
+
+        # Mock discord.Embed
+        embed_mock = MagicMock(spec=discord.Embed)
+        embed_mock.add_field = MagicMock(return_value=embed_mock)
+        monkeypatch.setattr(discord, "Embed", MagicMock(return_value=embed_mock))
+
+        # Call the command
+        await cog.blackjack_stats(ctx, test_user)
+
+        # Verify ctx.send was called with the embed
+        ctx.send.assert_called_once()
+        args, kwargs = ctx.send.call_args
+        assert 'embed' in kwargs
+        assert kwargs['embed'] == embed_mock
+
+        # Verify the embed was created with the right title
+        discord.Embed.assert_called_with(
+            title=f"Blackjack Stats for {test_user.display_name}",
+            color=discord.Color.blue()
+        )
+
+        # Verify the fields were added with the correct values
+        embed_mock.add_field.assert_any_call(name="Total Games", value=10, inline=True)
+        embed_mock.add_field.assert_any_call(name="Wins", value=5, inline=True)
+        embed_mock.add_field.assert_any_call(name="Losses", value=3, inline=True)
+        embed_mock.add_field.assert_any_call(name="Ties", value=2, inline=True)
+        embed_mock.add_field.assert_any_call(name="Win Percentage", value="50.00%", inline=True)
+
+    @pytest.mark.asyncio
+    async def test_blackjack_stats_all_users(self, cog, ctx, monkeypatch):
+        # Test the blackjack_stats command for all users
+
+        # Set up test stats for multiple users
+        cog.blackjack_stats = {
+            "12345": {"wins": 5, "losses": 3, "ties": 2},
+            "67890": {"wins": 8, "losses": 2, "ties": 0}
+        }
+
+        # Mock discord.Embed
+        embed_mock = MagicMock(spec=discord.Embed)
+        embed_mock.add_field = MagicMock(return_value=embed_mock)
+        monkeypatch.setattr(discord, "Embed", MagicMock(return_value=embed_mock))
+
+        # Mock bot.fetch_user to return test users
+        user1_mock = MagicMock(spec=discord.User)
+        user1_mock.display_name = "User1"
+        user2_mock = MagicMock(spec=discord.User)
+        user2_mock.display_name = "User2"
+
+        cog.bot.fetch_user = AsyncMock(side_effect=lambda user_id: 
+            user1_mock if user_id == 12345 else user2_mock
+        )
+
+        # Call the command
+        await cog.blackjack_stats(ctx)
+
+        # Verify ctx.send was called with the embed
+        ctx.send.assert_called_once()
+        args, kwargs = ctx.send.call_args
+        assert 'embed' in kwargs
+        assert kwargs['embed'] == embed_mock
+
+        # Verify the embed was created with the right title
+        discord.Embed.assert_called_with(
+            title="Blackjack Leaderboard",
+            description="Statistics for all players",
+            color=discord.Color.gold()
+        )
+
+        # Verify the fields were added for both users
+        # User2 should be first (higher win percentage)
+        embed_mock.add_field.assert_any_call(
+            name="1. User2",
+            value="Games: 10 | Wins: 8 | Win Rate: 80.00%",
+            inline=False
+        )
+
+        # User1 should be second
+        embed_mock.add_field.assert_any_call(
+            name="2. User1",
+            value="Games: 10 | Wins: 5 | Win Rate: 50.00%",
+            inline=False
+        )
+
+    @pytest.mark.asyncio
+    async def test_blackjack_stats_no_games(self, cog, ctx):
+        # Test the blackjack_stats command when no games have been played
+
+        # Ensure stats dictionary is empty
+        cog.blackjack_stats = {}
+
+        # Call the command
+        await cog.blackjack_stats(ctx)
+
+        # Verify ctx.send was called with the right message
+        ctx.send.assert_called_once_with("No blackjack games have been played yet.")
+
+    @pytest.mark.asyncio
+    async def test_blackjack_stats_user_no_games(self, cog, ctx):
+        # Test the blackjack_stats command for a user who hasn't played
+
+        # Create a test user
+        test_user = MagicMock(spec=discord.Member)
+        test_user.id = 12345
+        test_user.display_name = "TestUser"
+
+        # Ensure stats dictionary doesn't have this user
+        cog.blackjack_stats = {"67890": {"wins": 1, "losses": 1, "ties": 0}}
+
+        # Call the command
+        await cog.blackjack_stats(ctx, test_user)
+
+        # Verify ctx.send was called with the right message
+        ctx.send.assert_called_once_with(f"{test_user.display_name} hasn't played any blackjack games yet.")
