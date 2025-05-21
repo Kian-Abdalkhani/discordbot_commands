@@ -39,7 +39,11 @@ class UtilitiesCog(commands.Cog):
             await ctx.send(f"Invalid unit: {unit}. Please use seconds, minutes, or hours.")
             return
 
-        if seconds <= 0:
+        if seconds >= 86400:
+            logger.info(f"{ctx.author} attempted to use timer command with too large of a time value: {time}")
+            await ctx.send("Time must be below 24hrs")
+            return
+        elif seconds <= 0:
             logger.info(f"{ctx.author} attempted to use timer command with non-positive time value: {time}")
             await ctx.send("Time must be a positive number.")
             return
