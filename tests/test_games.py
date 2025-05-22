@@ -395,7 +395,7 @@ class TestGamesCog:
         test_user.display_name = "TestUser"
 
         # Set up test stats
-        cog.blackjack_stats = {
+        cog.player_stats = {
             "12345": {"wins": 5, "losses": 3, "ties": 2}
         }
 
@@ -405,7 +405,7 @@ class TestGamesCog:
         monkeypatch.setattr(discord, "Embed", MagicMock(return_value=embed_mock))
 
         # Call the command
-        await cog.blackjack_stats(ctx, test_user)
+        await cog.player_stats(ctx, test_user)
 
         # Verify ctx.send was called with the embed
         ctx.send.assert_called_once()
@@ -431,7 +431,7 @@ class TestGamesCog:
         # Test the blackjack_stats command for all users
 
         # Set up test stats for multiple users
-        cog.blackjack_stats = {
+        cog.player_stats = {
             "12345": {"wins": 5, "losses": 3, "ties": 2},
             "67890": {"wins": 8, "losses": 2, "ties": 0}
         }
@@ -452,7 +452,7 @@ class TestGamesCog:
         )
 
         # Call the command
-        await cog.blackjack_stats(ctx)
+        await cog.player_stats(ctx)
 
         # Verify ctx.send was called with the embed
         ctx.send.assert_called_once()
@@ -487,10 +487,10 @@ class TestGamesCog:
         # Test the blackjack_stats command when no games have been played
 
         # Ensure stats dictionary is empty
-        cog.blackjack_stats = {}
+        cog.player_stats = {}
 
         # Call the command
-        await cog.blackjack_stats(ctx)
+        await cog.player_stats(ctx)
 
         # Verify ctx.send was called with the right message
         ctx.send.assert_called_once_with("No blackjack games have been played yet.")
@@ -505,10 +505,10 @@ class TestGamesCog:
         test_user.display_name = "TestUser"
 
         # Ensure stats dictionary doesn't have this user
-        cog.blackjack_stats = {"67890": {"wins": 1, "losses": 1, "ties": 0}}
+        cog.player_stats = {"67890": {"wins": 1, "losses": 1, "ties": 0}}
 
         # Call the command
-        await cog.blackjack_stats(ctx, test_user)
+        await cog.player_stats(ctx, test_user)
 
         # Verify ctx.send was called with the right message
         ctx.send.assert_called_once_with(f"{test_user.display_name} hasn't played any blackjack games yet.")

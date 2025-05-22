@@ -14,7 +14,7 @@ class GamesCog(commands.Cog):
         self.bot = bot
         # Dictionary to store blackjack statistics for each player
         # Format: {user_id: {"wins": 0, "losses": 0, "ties": 0}}
-        self.blackjack_stats = {}
+        self.player_stats = {}
         self.stats_file = os.path.join(os.path.dirname(
             os.path.dirname(os.path.dirname(__file__))),
             "data", "blackjack_stats.json")
@@ -25,13 +25,13 @@ class GamesCog(commands.Cog):
         try:
             if os.path.exists(self.stats_file):
                 with open(self.stats_file, 'r') as f:
-                    self.blackjack_stats = json.load(f)
+                    self.player_stats = json.load(f)
                 logger.info(f"Loaded blackjack stats from {self.stats_file}")
             else:
                 logger.info(f"No blackjack stats file found at {self.stats_file}, starting with empty stats")
         except Exception as e:
             logger.error(f"Error loading blackjack stats: {e}")
-            self.blackjack_stats = {}
+            self.player_stats = {}
 
     def save_blackjack_stats(self):
         """Save blackjack stats to JSON file"""
@@ -40,7 +40,7 @@ class GamesCog(commands.Cog):
             os.makedirs(os.path.dirname(self.stats_file), exist_ok=True)
 
             with open(self.stats_file, 'w') as f:
-                json.dump(self.blackjack_stats, f, indent=4)
+                json.dump(self.player_stats, f, indent=4)
             logger.info(f"Saved blackjack stats to {self.stats_file}")
         except Exception as e:
             logger.error(f"Error saving blackjack stats: {e}")
@@ -100,11 +100,11 @@ class GamesCog(commands.Cog):
         # Helper function to update player statistics
         def update_player_stats(result_type):
             user_id = str(ctx.author.id)
-            if user_id not in self.blackjack_stats:
-                self.blackjack_stats[user_id] = {"wins": 0, "losses": 0, "ties": 0}
+            if user_id not in self.player_stats:
+                self.player_stats[user_id] = {"wins": 0, "losses": 0, "ties": 0}
 
-            self.blackjack_stats[user_id][result_type] += 1
-            logger.info(f"Updated blackjack stats for {ctx.author}: {self.blackjack_stats[user_id]}")
+            self.player_stats[user_id][result_type] += 1
+            logger.info(f"Updated blackjack stats for {ctx.author}: {self.player_stats[user_id]}")
             self.save_blackjack_stats()
 
         # Function to display game state
@@ -194,9 +194,9 @@ class GamesCog(commands.Cog):
                 await ctx.send("Game timed out.")
                 # Count timeout as a loss
                 user_id = str(ctx.author.id)
-                if user_id not in self.blackjack_stats:
-                    self.blackjack_stats[user_id] = {"wins": 0, "losses": 0, "ties": 0}
-                self.blackjack_stats[user_id]["losses"] += 1
+                if user_id not in self.player_stats:
+                    self.player_stats[user_id] = {"wins": 0, "losses": 0, "ties": 0}
+                self.player_stats[user_id]["losses"] += 1
                 logger.info(f"Blackjack game timed out for {ctx.author}. Counted as a loss.")
                 self.save_blackjack_stats()
                 return
@@ -211,14 +211,14 @@ class GamesCog(commands.Cog):
         # Clean up reactions
         await game_message.clear_reactions()
 
-    @commands.command(name="blackjack_stats")
+    @commands.command()
     async def blackjack_stats(self, ctx, user: discord.Member = None):
         """Shows blackjack statistics for a user or all users if no user is specified"""
         if user:
             # Show stats for the specified user
             user_id = str(user.id)
-            if user_id in self.blackjack_stats:
-                stats = self.blackjack_stats[user_id]
+            if user_id in self.player_stats:
+                stats = self.player_stats[user_id]
                 total_games = stats["wins"] + stats["losses"] + stats["ties"]
                 win_percentage = (stats["wins"] / total_games) * 100 if total_games > 0 else 0
 
@@ -237,7 +237,7 @@ class GamesCog(commands.Cog):
                 await ctx.send(f"{user.display_name} hasn't played any blackjack games yet.")
         else:
             # Show stats for all users
-            if not self.blackjack_stats:
+            if not self.player_stats:
                 await ctx.send("No blackjack games have been played yet.")
                 return
 
@@ -249,7 +249,7 @@ class GamesCog(commands.Cog):
 
             # Sort users by win percentage
             sorted_stats = []
-            for user_id, stats in self.blackjack_stats.items():
+            for user_id, stats in self.player_stats.items():
                 total_games = stats["wins"] + stats["losses"] + stats["ties"]
                 if total_games > 0:
                     win_percentage = (stats["wins"] / total_games) * 100
