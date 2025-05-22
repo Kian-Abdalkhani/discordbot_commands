@@ -15,7 +15,9 @@ class GamesCog(commands.Cog):
         # Dictionary to store blackjack statistics for each player
         # Format: {user_id: {"wins": 0, "losses": 0, "ties": 0}}
         self.blackjack_stats = {}
-        self.stats_file = os.path.join('data', 'blackjack_stats.json')
+        self.stats_file = os.path.join(os.path.dirname(
+            os.path.dirname(os.path.dirname(__file__))),
+            "data", "blackjack_stats.json")
         self.load_blackjack_stats()
 
     def load_blackjack_stats(self):

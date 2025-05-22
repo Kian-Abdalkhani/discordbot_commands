@@ -13,7 +13,9 @@ class QuotesCog(commands.Cog):
         self.bot = bot
         self.quotes = {}
         self.quote_counter = 0
-        self.quotes_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "quotes.json")
+        self.quotes_file = os.path.join(os.path.dirname(
+            os.path.dirname(os.path.dirname(__file__))),
+            "data", "quotes.json")
         self._load_quotes()
 
     def _load_quotes(self):
