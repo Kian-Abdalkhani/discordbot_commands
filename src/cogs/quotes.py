@@ -6,7 +6,7 @@ import json
 import os
 import discord
 
-from config.settings import GUILD_ID
+from src.config.settings import GUILD_ID
 
 logger = logging.getLogger(__name__)
 

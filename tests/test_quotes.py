@@ -58,14 +58,16 @@ class TestQuotesCog:
         return cog
 
     @pytest.fixture
-    def ctx(self):
-        ctx = MagicMock()
-        ctx.send = AsyncMock()
-        ctx.author = MagicMock(spec=discord.Member)
-        ctx.author.__str__ = lambda self: "Test User"
-        ctx.message = MagicMock()
-        ctx.message.created_at = datetime.now()
-        return ctx
+    def interaction(self):
+        interaction = MagicMock(spec=discord.Interaction)
+        interaction.response.send_message = AsyncMock()
+        interaction.followup.send = AsyncMock()
+        interaction.edit_original_response = AsyncMock()
+        interaction.user = MagicMock(spec=discord.Member)
+        interaction.user.__str__ = lambda self: "Test User"
+        interaction.user.name = "testuser"
+        interaction.created_at = datetime.now()
+        return interaction
 
     def test_load_quotes(self, cog):
         # Test that quotes are loaded correctly
@@ -75,39 +77,41 @@ class TestQuotesCog:
         assert cog.quotes["2"]["author"] == "Another Author"
 
     @pytest.mark.asyncio
-    async def test_add_quote(self, cog, ctx):
+    async def test_add_quote(self, cog, interaction):
         # Test adding a quote with author
-        await cog.add_quote(ctx, quote_text="This is a test quote - Test Author")
+        await cog.add_quote(interaction, quote_text="This is a test quote", quote_author="Test Author")
 
         # Verify the quote was added
         assert "3" in cog.quotes
         assert cog.quotes["3"]["text"] == "This is a test quote"
         assert cog.quotes["3"]["author"] == "Test Author"
+        assert cog.quotes["3"]["added_by"] == "testuser"
 
-        # Verify ctx.send was called with the success message
-        ctx.send.assert_called_once_with("Quote #3 added successfully!")
+        # Verify interaction.response.send_message was called with the success message
+        interaction.response.send_message.assert_called_once_with("Quote #3 added successfully!")
 
     @pytest.mark.asyncio
-    async def test_add_quote_no_author(self, cog, ctx):
-        # Test adding a quote without an author
-        await cog.add_quote(ctx, quote_text="This is a test quote without author")
+    async def test_add_quote_no_author(self, cog, interaction):
+        # Test adding a quote without an author (using empty string)
+        await cog.add_quote(interaction, quote_text="This is a test quote without author", quote_author="")
 
         # Verify the quote was added with "Unknown" author
         assert "3" in cog.quotes
         assert cog.quotes["3"]["text"] == "This is a test quote without author"
         assert cog.quotes["3"]["author"] == "Unknown"
+        assert cog.quotes["3"]["added_by"] == "testuser"
 
-        # Verify ctx.send was called with the success message
-        ctx.send.assert_called_once_with("Quote #3 added successfully!")
+        # Verify interaction.response.send_message was called with the success message
+        interaction.response.send_message.assert_called_once_with("Quote #3 added successfully!")
 
     @pytest.mark.asyncio
-    async def test_quote_by_id(self, cog, ctx):
+    async def test_quote_by_id(self, cog, interaction):
         # Test getting a quote by ID
-        await cog.quote(ctx, quote_id="1")
+        await cog.quote(interaction, quote_id=1)
 
-        # Verify ctx.send was called with an embed
-        assert ctx.send.called
-        embed = ctx.send.call_args[0][0]
+        # Verify interaction.response.send_message was called with an embed
+        assert interaction.response.send_message.called
+        embed = interaction.response.send_message.call_args[1]['embed']
         assert isinstance(embed, discord.Embed)
         assert embed.title == "Quote #1"
         assert "Test quote 1" in embed.description

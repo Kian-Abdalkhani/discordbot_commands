@@ -7,7 +7,7 @@ from discord.ext import commands
 from discord import app_commands
 import logging
 
-from config.settings import GUILD_ID
+from src.config.settings import GUILD_ID
 
 logger = logging.getLogger(__name__)
 

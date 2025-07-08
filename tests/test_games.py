@@ -16,42 +16,49 @@ class TestGamesCog:
 
     @pytest.fixture
     def cog(self, bot):
-        return GamesCog(bot)
+        with patch('src.cogs.games.os.path.exists', return_value=True), \
+             patch('src.cogs.games.open', create=True) as mock_open:
+            mock_open.return_value.__enter__.return_value.read.return_value = '{"stats": {}}'
+            return GamesCog(bot)
 
     @pytest.fixture
-    def ctx(self):
-        ctx = MagicMock()
-        ctx.send = AsyncMock()
-        ctx.author = MagicMock()
-        return ctx
+    def interaction(self):
+        interaction = MagicMock(spec=discord.Interaction)
+        interaction.response.send_message = AsyncMock()
+        interaction.followup.send = AsyncMock()
+        interaction.edit_original_response = AsyncMock()
+        interaction.user = MagicMock()
+        interaction.user.id = 12345
+        interaction.user.mention = "@TestUser"
+        return interaction
 
     @pytest.mark.asyncio
-    async def test_flip_coin(self, cog, ctx, monkeypatch):
+    async def test_flip_coin(self, cog, interaction, monkeypatch):
         # Test that flip_coin returns either heads or tails
 
         # Mock random.choice to return a predictable result
         monkeypatch.setattr(random, "choice", lambda x: "heads")
 
         # Call the command
-        await cog.flip_coin(ctx)
+        await cog.flip_coin.callback(cog, interaction)
 
-        # Verify ctx.send was called with "heads"
-        ctx.send.assert_called_once_with("heads")
+        # Verify interaction.response.send_message was called with "heads"
+        interaction.response.send_message.assert_called_once_with("heads")
 
         # Reset the mock
-        ctx.send.reset_mock()
+        interaction.response.send_message.reset_mock()
 
         # Change the mock to return tails
         monkeypatch.setattr(random, "choice", lambda x: "tails")
 
         # Call the command again
-        await cog.flip_coin(ctx)
+        await cog.flip_coin.callback(cog, interaction)
 
-        # Verify ctx.send was called with "tails"
-        ctx.send.assert_called_once_with("tails")
+        # Verify interaction.response.send_message was called with "tails"
+        interaction.response.send_message.assert_called_once_with("tails")
 
     @pytest.mark.asyncio
-    async def test_blackjack_initial_deal(self, cog, ctx, monkeypatch):
+    async def test_blackjack_initial_deal(self, cog, interaction, monkeypatch):
         # Test the initial deal in blackjack
 
         # Mock random.shuffle to do nothing
@@ -63,26 +70,21 @@ class TestGamesCog:
             ('Q', '♦'), ('J', '♣')   # Dealer's hand (20)
         ]
 
-        # Mock the deck creation
-        monkeypatch.setattr(
-            "src.cogs.games.GamesCog.blackjack.__globals__['deck']", 
-            test_deck
-        )
-
-        # Mock the embed creation and sending
+        # Mock the embed creation
         embed_mock = MagicMock()
-        ctx.send.return_value = MagicMock()
 
         # Mock discord.Embed
-        with patch('discord.Embed', return_value=embed_mock):
-            # Call the command
-            with pytest.raises(Exception):
-                # This will likely raise an exception because we can't fully mock the game flow
-                # We're just testing the initial setup
-                await cog.blackjack(ctx)
+        with patch('discord.Embed', return_value=embed_mock), \
+             patch('random.shuffle'), \
+             patch.object(cog, 'save_blackjack_stats'):
 
-        # Verify ctx.send was called (indicating the game started)
-        assert ctx.send.called
+            # Mock the deck creation within the blackjack method
+            with patch('src.cogs.games.random.shuffle'):
+                # Call the command - this should complete the initial deal
+                await cog.blackjack.callback(cog, interaction)
+
+        # Verify interaction.response.send_message was called (indicating the game started)
+        assert interaction.response.send_message.called
 
     def test_calculate_value(self, cog):
         # Test the calculate_value function used in blackjack

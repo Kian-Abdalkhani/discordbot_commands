@@ -3,214 +3,173 @@ import pytest_mock
 import discord
 from discord.ext import commands
 from unittest.mock import AsyncMock, MagicMock, patch
-from src.bot import create_bot
+from src.main import Client
 
 
-class TestBot:
+class TestClient:
     @pytest.fixture
-    def mock_bot(self, mocker):
-        # Mock the discord.ext.commands.Bot class
+    def mock_client(self, mocker):
+        # Mock the discord.ext.commands.Bot class that Client inherits from
         bot_mock = mocker.MagicMock(spec=commands.Bot)
         bot_mock.user = mocker.MagicMock(spec=discord.ClientUser)
         bot_mock.user.mentioned_in = mocker.MagicMock(return_value=False)
-
-        # Mock the event registration methods
-        events = {}
-
-        def register_event(event_name):
-            def decorator(func):
-                events[event_name] = func
-                return func
-            return decorator
-
-        bot_mock.event = register_event
-        bot_mock.events = events
-
-        # Mock the process_commands method
+        bot_mock.tree = mocker.MagicMock()
+        bot_mock.tree.sync = AsyncMock()
+        bot_mock.load_extension = AsyncMock()
         bot_mock.process_commands = AsyncMock()
 
-        # Return the mocked bot
         return bot_mock
 
     @pytest.fixture
-    def mock_commands_bot(self, mocker):
-        # Mock the Bot constructor
-        bot_mock = mocker.MagicMock()
-        mocker.patch('discord.ext.commands.Bot', return_value=bot_mock)
-        return bot_mock
+    def client_instance(self, mocker):
+        # Create a Client instance with real intents
+        intents = discord.Intents.default()
+        intents.message_content = True
+        intents.members = True
 
-    def test_create_bot(self, mock_commands_bot):
-        # Test that create_bot creates a bot with the correct parameters
-        bot = create_bot()
+        # Mock the Client class to avoid discord connection issues
+        with patch('src.main.Client') as MockClient:
+            client = MagicMock(spec=Client)
+            MockClient.return_value = client
 
-        # Verify Bot was created with the correct parameters
-        discord.ext.commands.Bot.assert_called_once()
-        call_args = discord.ext.commands.Bot.call_args
+            # Set up the mock client
+            mock_user = MagicMock()
+            mock_user.mentioned_in = MagicMock(return_value=False)
+            client.user = mock_user
 
-        # Check command prefix
-        assert call_args[1]['command_prefix'] == "!"
+            client.tree = MagicMock()
+            client.tree.sync = AsyncMock()
+            client.load_extension = AsyncMock()
+            client.process_commands = AsyncMock()
 
-        # Check intents
-        intents = call_args[1]['intents']
-        assert isinstance(intents, discord.Intents)
-        assert intents.message_content is True
-        assert intents.members is True
+            # Add the actual methods we want to test
+            client.on_ready = Client.on_ready.__get__(client, Client)
+            client.on_connect = Client.on_connect.__get__(client, Client)
+            client.on_disconnect = Client.on_disconnect.__get__(client, Client)
+            client.on_message = Client.on_message.__get__(client, Client)
 
-    def test_on_ready(self, mock_bot):
-        # Create a mock for the on_ready event
-        on_ready_mock = AsyncMock()
+            return client
 
-        # Store the decorator function to capture the event handler
-        original_event = mock_bot.event
-        registered_events = {}
+    def test_client_initialization(self):
+        # Test that Client can be initialized with correct parameters
+        intents = discord.Intents.default()
+        intents.message_content = True
+        intents.members = True
 
-        def event_decorator(func):
-            if func.__name__ == 'on_ready':
-                registered_events['on_ready'] = func
-            return original_event(func)
+        client = Client(command_prefix="!", intents=intents)
 
-        # Replace the event decorator with our version
-        mock_bot.event = event_decorator
-
-        # Create the bot which registers the event handlers
-        bot = create_bot()
-
-        # Verify that on_ready was registered
-        assert 'on_ready' in registered_events
-
-        # Call the event handler using the run_async helper
-        from conftest import run_async
-        run_async(registered_events['on_ready']())
-
-        # No assertions needed as this just logs a message
-        # We're just verifying it doesn't raise an exception
+        # Verify the client was created successfully
+        assert isinstance(client, Client)
+        assert isinstance(client, commands.Bot)
 
     @pytest.mark.asyncio
-    async def test_on_connect(self, mock_bot):
-        # Create the bot which registers the event handlers
-        create_bot.__globals__['commands'] = commands
-        create_bot.__globals__['discord'] = discord
-        create_bot.__globals__['Bot'] = mock_bot.__class__
-        create_bot.__globals__['commands'].Bot = lambda **kwargs: mock_bot
+    async def test_on_ready(self, client_instance, mocker):
+        # Mock the dependencies for on_ready
+        with patch('src.main.discord.Object') as mock_object, \
+             patch('src.main.GUILD_ID', 12345):
 
-        bot = create_bot()
+            mock_guild = MagicMock()
+            mock_object.return_value = mock_guild
 
-        # Get the on_connect event handler
-        on_connect = mock_bot.events.get('on_connect')
-        assert on_connect is not None
+            # Mock the sync result
+            client_instance.tree.sync.return_value = [MagicMock(), MagicMock()]  # 2 synced commands
 
-        # Call the event handler
-        await on_connect()
+            # Call the on_ready method
+            await client_instance.on_ready()
 
-        # No assertions needed as this just logs a message
-        # We're just verifying it doesn't raise an exception
+            # Verify extensions were loaded
+            client_instance.load_extension.assert_any_call('cogs.utilities')
+            client_instance.load_extension.assert_any_call('cogs.quotes')
+            client_instance.load_extension.assert_any_call('cogs.games')
 
-    @pytest.mark.asyncio
-    async def test_on_disconnect(self, mock_bot):
-        # Create the bot which registers the event handlers
-        create_bot.__globals__['commands'] = commands
-        create_bot.__globals__['discord'] = discord
-        create_bot.__globals__['Bot'] = mock_bot.__class__
-        create_bot.__globals__['commands'].Bot = lambda **kwargs: mock_bot
-
-        bot = create_bot()
-
-        # Get the on_disconnect event handler
-        on_disconnect = mock_bot.events.get('on_disconnect')
-        assert on_disconnect is not None
-
-        # Call the event handler
-        await on_disconnect()
-
-        # No assertions needed as this just logs a message
-        # We're just verifying it doesn't raise an exception
+            # Verify tree sync was called
+            client_instance.tree.sync.assert_called_once_with(guild=mock_guild)
 
     @pytest.mark.asyncio
-    async def test_on_message_not_mentioned(self, mock_bot, mocker):
-        # Create a mock message
+    async def test_on_ready_sync_error(self, client_instance, mocker):
+        # Mock the dependencies and make sync raise an exception
+        with patch('src.main.discord.Object') as mock_object, \
+             patch('src.main.GUILD_ID', 12345), \
+             patch('src.main.logger') as mock_logger:
+
+            mock_guild = MagicMock()
+            mock_object.return_value = mock_guild
+
+            # Make tree.sync raise an exception
+            client_instance.tree.sync.side_effect = Exception("Sync failed")
+
+            # Call the on_ready method
+            await client_instance.on_ready()
+
+            # Verify error was logged
+            mock_logger.error.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_on_connect(self, client_instance):
+        # Test the on_connect event handler
+        with patch('src.main.logger') as mock_logger:
+            await client_instance.on_connect()
+            # Verify it logs the connection message
+            mock_logger.info.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_on_disconnect(self, client_instance):
+        # Test the on_disconnect event handler
+        with patch('src.main.logger') as mock_logger:
+            await client_instance.on_disconnect()
+            # Verify it logs the disconnection message
+            mock_logger.info.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_on_message_from_bot(self, client_instance, mocker):
+        # Create a mock message from the bot itself
+        message = mocker.MagicMock()
+        message.author = client_instance.user
+        message.channel.send = AsyncMock()
+
+        # Call the on_message event handler
+        await client_instance.on_message(message)
+
+        # Verify the bot didn't send a message
+        message.channel.send.assert_not_called()
+        # Verify process_commands was not called
+        client_instance.process_commands.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_on_message_not_mentioned(self, client_instance, mocker):
+        # Create a mock message from another user
         message = mocker.MagicMock()
         message.author = mocker.MagicMock()
         message.channel.send = AsyncMock()
 
         # Set up the bot to not be mentioned
-        mock_bot.user.mentioned_in.return_value = False
+        client_instance.user.mentioned_in.return_value = False
 
-        # Create the bot which registers the event handlers
-        create_bot.__globals__['commands'] = commands
-        create_bot.__globals__['discord'] = discord
-        create_bot.__globals__['Bot'] = mock_bot.__class__
-        create_bot.__globals__['commands'].Bot = lambda **kwargs: mock_bot
+        # Call the on_message event handler
+        await client_instance.on_message(message)
 
-        bot = create_bot()
-
-        # Get the on_message event handler
-        on_message = mock_bot.events.get('on_message')
-        assert on_message is not None
-
-        # Call the event handler
-        await on_message(message)
-
-        # Verify the bot didn't send a message
+        # Verify the bot didn't send a greeting message
         message.channel.send.assert_not_called()
-
         # Verify process_commands was called
-        mock_bot.process_commands.assert_called_once_with(message)
+        client_instance.process_commands.assert_called_once_with(message)
 
     @pytest.mark.asyncio
-    async def test_on_message_mentioned(self, mock_bot, mocker):
-        # Create a mock message
+    async def test_on_message_mentioned(self, client_instance, mocker):
+        # Create a mock message from another user
         message = mocker.MagicMock()
         message.author = mocker.MagicMock()
+        message.author.mention = "@TestUser"
         message.channel.send = AsyncMock()
 
         # Set up the bot to be mentioned
-        mock_bot.user.mentioned_in.return_value = True
+        client_instance.user.mentioned_in.return_value = True
 
-        # Create the bot which registers the event handlers
-        create_bot.__globals__['commands'] = commands
-        create_bot.__globals__['discord'] = discord
-        create_bot.__globals__['Bot'] = mock_bot.__class__
-        create_bot.__globals__['commands'].Bot = lambda **kwargs: mock_bot
+        # Call the on_message event handler
+        await client_instance.on_message(message)
 
-        bot = create_bot()
+        # Verify the bot sent a greeting message
+        expected_message = f"Hello {message.author.mention}, I am the server's minigame bot!"
+        message.channel.send.assert_called_once_with(expected_message)
 
-        # Get the on_message event handler
-        on_message = mock_bot.events.get('on_message')
-        assert on_message is not None
-
-        # Call the event handler
-        await on_message(message)
-
-        # Verify the bot sent a message
-        message.channel.send.assert_called_once_with("Hello!")
-
-        # Verify process_commands was called
-        mock_bot.process_commands.assert_called_once_with(message)
-
-    @pytest.mark.asyncio
-    async def test_on_message_from_bot(self, mock_bot, mocker):
-        # Create a mock message from the bot itself
-        message = mocker.MagicMock()
-        message.author = mock_bot.user
-        message.channel.send = AsyncMock()
-
-        # Create the bot which registers the event handlers
-        create_bot.__globals__['commands'] = commands
-        create_bot.__globals__['discord'] = discord
-        create_bot.__globals__['Bot'] = mock_bot.__class__
-        create_bot.__globals__['commands'].Bot = lambda **kwargs: mock_bot
-
-        bot = create_bot()
-
-        # Get the on_message event handler
-        on_message = mock_bot.events.get('on_message')
-        assert on_message is not None
-
-        # Call the event handler
-        await on_message(message)
-
-        # Verify the bot didn't send a message
-        message.channel.send.assert_not_called()
-
-        # Verify process_commands was not called
-        mock_bot.process_commands.assert_not_called()
+        # Verify process_commands was not called (since we return early when mentioned)
+        client_instance.process_commands.assert_not_called()

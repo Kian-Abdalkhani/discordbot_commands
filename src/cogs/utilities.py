@@ -4,7 +4,7 @@ from discord.ext import commands
 import asyncio
 import logging
 
-from config.settings import GUILD_ID
+from src.config.settings import GUILD_ID
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ class UtilitiesCog(commands.Cog):
         """
         # Convert unit to lowercase and handle singular/plural forms
         unit = unit.lower()
-        if unit.endswith('s') and unit != 'seconds' and unit != 'minutes' and unit != 'hours':
+        if unit.endswith('s') and unit not in ['seconds', 'minutes', 'hours', 's', 'secs', 'mins', 'hrs']:
             unit = unit[:-1]  # Remove 's' from the end if it's not one of the standard plural forms
 
         # Calculate seconds based on the unit
