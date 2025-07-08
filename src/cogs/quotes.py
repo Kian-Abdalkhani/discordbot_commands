@@ -1,9 +1,12 @@
 from discord.ext import commands
+from discord import app_commands
 import logging
 import random
 import json
 import os
 import discord
+
+from config.settings import GUILD_ID
 
 logger = logging.getLogger(__name__)
 
@@ -44,49 +47,41 @@ class QuotesCog(commands.Cog):
         except Exception as e:
             logger.error(f"Error saving quotes: {e}")
 
-    @commands.command(name="addquote")
-    async def add_quote(self, ctx, *, quote_text):
+    @app_commands.command(name="quote_add", description="Add a new quote to the collection")
+    @app_commands.describe(quote_text="The quote itself", quote_author="The author of the quote")
+    async def add_quote(self, interaction: discord.Interaction, quote_text: str, quote_author: str):
         """
         Add a new quote to the collection
-        Usage: !addquote <quote text> - <author>
-        Example: !addquote That's what she said - Michael Scott
+        Usage: /addquote <quote text> - <author>
+        Example: /addquote That's what she said - Michael Scott
         """
-        if not quote_text:
-            await ctx.send("Please provide a quote to add.")
-            return
-
-        # Check if the quote has an author specified
-        if " - " in quote_text:
-            quote_content, author = quote_text.rsplit(" - ", 1)
-        else:
-            quote_content = quote_text
-            author = "Unknown"
 
         # Increment counter and add the quote
         self.quote_counter += 1
         quote_id = str(self.quote_counter)
 
         self.quotes[quote_id] = {
-            "text": quote_content.strip(),
-            "author": author.strip(),
-            "added_by": str(ctx.author),
-            "added_at": ctx.message.created_at.isoformat()
+            "text": quote_text.strip(),
+            "author": quote_author.strip(),
+            "added_by": str(interaction.user),
+            "added_at": interaction.created_at.isoformat()
         }
 
         self._save_quotes()
 
-        logger.info(f"{ctx.author} added quote #{quote_id}: '{quote_content}' by {author}")
-        await ctx.send(f"Quote #{quote_id} added successfully!")
+        logger.info(f"{interaction.user} added quote #{quote_id}: '{quote_text}' by {quote_author}")
+        await interaction.response.send_message(f"Quote #{quote_id} added successfully!")
 
-    @commands.command(name="quote")
-    async def quote(self, ctx, quote_id=None):
+    @app_commands.command(name="find_quote", description="Display a quote by ID or a random quote")
+    @app_commands.describe(quote_id="The ID of the quote to display (optional)")
+    async def quote(self, interaction: discord.Interaction, quote_id: int = None):
         """
         Display a quote by ID or a random quote if no ID is provided
-        Usage: !quote [quote_id]
-        Example: !quote 42
+        Usage: /quote [quote_id]
+        Example: /quote 42
         """
         if not self.quotes:
-            await ctx.send("No quotes have been added yet.")
+            await interaction.response.send_message("No quotes have been added yet.")
             return
 
         if quote_id is None:
@@ -102,19 +97,19 @@ class QuotesCog(commands.Cog):
             )
             embed.set_footer(text=f"- {quote['author']}")
 
-            logger.info(f"{ctx.author} requested quote #{quote_id}")
-            await ctx.send(embed=embed)
+            logger.info(f"{interaction.user} requested quote #{quote_id}")
+            await interaction.response.send_message(embed=embed)
         else:
-            await ctx.send(f"Quote #{quote_id} not found.")
+            await interaction.response.send_message(f"Quote #{quote_id} not found.")
 
-    @commands.command(name="listquotes")
-    async def list_quotes(self, ctx):
+    @app_commands.command(name="quotes_all", description="List all available quotes")
+    async def list_quotes(self, interaction: discord.Interaction):
         """
         List all available quotes
-        Usage: !listquotes
+        Usage: /listquotes
         """
         if not self.quotes:
-            await ctx.send("No quotes have been added yet.")
+            await interaction.response.send_message("No quotes have been added yet.")
             return
 
         # Create an embed with the list of quotes
@@ -134,20 +129,21 @@ class QuotesCog(commands.Cog):
 
         # Add a note if there are more quotes
         if len(quotes_list) > 25:
-            embed.set_footer(text=f"Showing 25/{len(quotes_list)} quotes. Use !quote <id> to see a specific quote.")
+            embed.set_footer(text=f"Showing 25/{len(quotes_list)} quotes. Use /quote <id> to see a specific quote.")
 
-        logger.info(f"{ctx.author} requested the list of quotes")
-        await ctx.send(embed=embed)
+        logger.info(f"{interaction.user} requested the list of quotes")
+        await interaction.response.send_message(embed=embed)
 
-    @commands.command(name="quotesby")
-    async def quotes_by(self, ctx, *, author):
+    @app_commands.command(name="quotes_by", description="Display all quotes by a specific author")
+    @app_commands.describe(author="The author whose quotes to display")
+    async def quotes_by(self, interaction: discord.Interaction, *, author: str):
         """
         Display all quotes by a specific author
-        Usage: !quotesby <author>
-        Example: !quotesby Michael Scott
+        Usage: /quotesby <author>
+        Example: /quotesby Michael Scott
         """
         if not self.quotes:
-            await ctx.send("No quotes have been added yet.")
+            await interaction.response.send_message("No quotes have been added yet.")
             return
 
         # Filter quotes by the specified author
@@ -155,7 +151,7 @@ class QuotesCog(commands.Cog):
                         if quote['author'].lower() == author.lower()}
 
         if not author_quotes:
-            await ctx.send(f"No quotes found by '{author}'.")
+            await interaction.response.send_message(f"No quotes found by '{author}'.")
             return
 
         # Create an embed with the list of quotes by this author
@@ -175,25 +171,31 @@ class QuotesCog(commands.Cog):
 
         # Add a note if there are more quotes
         if len(quotes_list) > 25:
-            embed.set_footer(text=f"Showing 25/{len(quotes_list)} quotes. Use !quote <id> to see a specific quote.")
+            embed.set_footer(text=f"Showing 25/{len(quotes_list)} quotes. Use /quote <id> to see a specific quote.")
         else:
             embed.set_footer(text=f"Found {len(quotes_list)} quote(s) by {author}.")
 
-        logger.info(f"{ctx.author} requested quotes by {author}")
-        await ctx.send(embed=embed)
+        logger.info(f"{interaction.user} requested quotes by {author}")
+        await interaction.response.send_message(embed=embed)
 
-    @commands.command(name="deletequote")
-    async def delete_quote(self, ctx, quote_id):
+    @app_commands.command(name="quote_delete", description="Delete a quote by ID")
+    @app_commands.describe(quote_id="The ID of the quote to delete")
+    async def delete_quote(self, interaction: discord.Interaction, quote_id: str):
         """
         Delete a quote by ID
-        Usage: !deletequote <quote_id>
-        Example: !deletequote 42
+        Usage: /deletequote <quote_id>
+        Example: /deletequote 42
         """
         if quote_id in self.quotes:
             del self.quotes[quote_id]
             self._save_quotes()
 
-            logger.info(f"{ctx.author} deleted quote #{quote_id}")
-            await ctx.send(f"Quote #{quote_id} has been deleted.")
+            logger.info(f"{interaction.user} deleted quote #{quote_id}")
+            await interaction.response.send_message(f"Quote #{quote_id} has been deleted.")
         else:
-            await ctx.send(f"Quote #{quote_id} not found.")
+            await interaction.response.send_message(f"Quote #{quote_id} not found.")
+
+
+async def setup(bot):
+    guild_id = discord.Object(id=GUILD_ID)
+    await bot.add_cog(QuotesCog(bot), guild=guild_id)

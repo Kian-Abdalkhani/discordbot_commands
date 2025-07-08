@@ -4,7 +4,10 @@ import discord
 import json
 import os
 from discord.ext import commands
+from discord import app_commands
 import logging
+
+from config.settings import GUILD_ID
 
 logger = logging.getLogger(__name__)
 
@@ -45,17 +48,17 @@ class GamesCog(commands.Cog):
         except Exception as e:
             logger.error(f"Error saving blackjack stats: {e}")
 
-    @commands.command(name="coinflip")
-    async def flip_coin(self, ctx):
+    @app_commands.command(name="coinflip", description="Flips a coin and returns heads or tails")
+    async def flip_coin(self, interaction: discord.Interaction):
         """Flips a coin and returns heads or tails"""
-        logger.info(f"{ctx.author} flipped a coin")
+        logger.info(f"{interaction.user} flipped a coin")
         coin = random.choice(["heads", "tails"])
-        await ctx.send(coin)
+        await interaction.response.send_message(coin)
 
-    @commands.command()
-    async def blackjack(self, ctx):
+    @app_commands.command(name="blackjack", description="Plays a game of blackjack")
+    async def blackjack(self, interaction: discord.Interaction):
         """Plays a game of blackjack"""
-        logger.info(f"{ctx.author} started a blackjack game")
+        logger.info(f"{interaction.user} started a blackjack game")
 
         # Card representations
         suits = ['♥', '♦', '♣', '♠']
@@ -99,12 +102,12 @@ class GamesCog(commands.Cog):
 
         # Helper function to update player statistics
         def update_player_stats(result_type):
-            user_id = str(ctx.author.id)
+            user_id = str(interaction.user.id)
             if user_id not in self.player_stats:
                 self.player_stats[user_id] = {"wins": 0, "losses": 0, "ties": 0}
 
             self.player_stats[user_id][result_type] += 1
-            logger.info(f"Updated blackjack stats for {ctx.author}: {self.player_stats[user_id]}")
+            logger.info(f"Updated blackjack stats for {interaction.user}: {self.player_stats[user_id]}")
             self.save_blackjack_stats()
 
         # Function to display game state
@@ -144,7 +147,8 @@ class GamesCog(commands.Cog):
             return embed
 
         # Initial game state
-        game_message = await ctx.send(embed=await display_game_state())
+        await interaction.response.send_message(embed=await display_game_state())
+        game_message = await interaction.original_response()
 
         # Check for natural blackjack
         player_value = calculate_value(player_hand)
@@ -170,7 +174,7 @@ class GamesCog(commands.Cog):
         await game_message.add_reaction("🛑")  # Stand
 
         def check(reaction, user):
-            return user == ctx.author and str(reaction.emoji) in ["👊", "🛑"] and reaction.message.id == game_message.id
+            return user == interaction.user and str(reaction.emoji) in ["👊", "🛑"] and reaction.message.id == game_message.id
 
         # Player's turn
         while calculate_value(player_hand) < 21:
@@ -191,13 +195,13 @@ class GamesCog(commands.Cog):
                     break
 
             except asyncio.TimeoutError:
-                await ctx.send("Game timed out.")
+                await interaction.followup.send("Game timed out.")
                 # Count timeout as a loss
-                user_id = str(ctx.author.id)
+                user_id = str(interaction.user.id)
                 if user_id not in self.player_stats:
                     self.player_stats[user_id] = {"wins": 0, "losses": 0, "ties": 0}
                 self.player_stats[user_id]["losses"] += 1
-                logger.info(f"Blackjack game timed out for {ctx.author}. Counted as a loss.")
+                logger.info(f"Blackjack game timed out for {interaction.user}. Counted as a loss.")
                 self.save_blackjack_stats()
                 return
 
@@ -211,8 +215,9 @@ class GamesCog(commands.Cog):
         # Clean up reactions
         await game_message.clear_reactions()
 
-    @commands.command()
-    async def blackjack_stats(self, ctx, user: discord.Member = None):
+    @app_commands.command(name="blackjack_stats", description="Shows blackjack statistics for a user or all users")
+    @app_commands.describe(user="The user to show stats for (optional - shows all users if not specified)")
+    async def blackjack_stats(self, interaction: discord.Interaction, user: discord.Member = None):
         """Shows blackjack statistics for a user or all users if no user is specified"""
         if user:
             # Show stats for the specified user
@@ -232,13 +237,13 @@ class GamesCog(commands.Cog):
                 embed.add_field(name="Ties", value=stats["ties"], inline=True)
                 embed.add_field(name="Win Percentage", value=f"{win_percentage:.2f}%", inline=True)
 
-                await ctx.send(embed=embed)
+                await interaction.response.send_message(embed=embed)
             else:
-                await ctx.send(f"{user.display_name} hasn't played any blackjack games yet.")
+                await interaction.response.send_message(f"{user.display_name} hasn't played any blackjack games yet.")
         else:
             # Show stats for all users
             if not self.player_stats:
-                await ctx.send("No blackjack games have been played yet.")
+                await interaction.response.send_message("No blackjack games have been played yet.")
                 return
 
             embed = discord.Embed(
@@ -277,4 +282,9 @@ class GamesCog(commands.Cog):
                     inline=False
                 )
 
-            await ctx.send(embed=embed)
+            await interaction.response.send_message(embed=embed)
+
+
+async def setup(bot):
+    guild_id = discord.Object(id=GUILD_ID)
+    await bot.add_cog(GamesCog(bot), guild=guild_id)

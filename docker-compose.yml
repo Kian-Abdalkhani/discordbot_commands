@@ -2,29 +2,9 @@ services:
   discord-bot:
     container_name: discord-bot
     build: .
-    depends_on:
-      - ollama
     environment:
-      - OLLAMA_API_URL=http://ollama:11434
       - BOT_TOKEN=${BOT_TOKEN}
+      - GUILD_ID=${GUILD_ID}
     volumes:
       - ./data:/app/data
-    restart: unless-stopped
-
-  ollama:
-    container_name: ollama
-    image: ollama/ollama:latest
-    environment:
-      - OLLAMA_MODEL_KEEP_ALIVE=24h
-    deploy:
-      resources:
-        reservations:
-          devices:
-          - driver: nvidia
-            capabilities: ["gpu"]
-            count: all
-    volumes:
-      - ./config/.ollama:/root/.ollama
-    ports:
-      - "0.0.0.0:11434:11434"
     restart: unless-stopped
