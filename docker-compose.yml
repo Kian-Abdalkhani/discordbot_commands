@@ -1,6 +1,6 @@
 services:
-  discord-bot:
-    container_name: discord-bot
+  command-bot:
+    container_name: command-bot
     build: .
     environment:
       - BOT_TOKEN=${BOT_TOKEN}
