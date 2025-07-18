@@ -7,6 +7,7 @@ from discord.ext import commands
 from discord import app_commands
 import traceback
 
+
 class FeatureRequest(discord.ui.Modal, title='Feature Request'):
     def __init__(self):
         super().__init__()
@@ -34,7 +35,7 @@ class FeatureRequest(discord.ui.Modal, title='Feature Request'):
                 user_id=interaction.user.id,
                 username=interaction.user.name
             )
-            
+
             await interaction.response.send_message(
                 f'Thanks for your feature request, {self.name.value}! '
                 f'Your request has been saved with ID #{request_data["id"]} and will be reviewed.',
@@ -42,14 +43,31 @@ class FeatureRequest(discord.ui.Modal, title='Feature Request'):
             )
         except Exception as e:
             logging.error(f"Error saving feature request: {e}")
-            await interaction.response.send_message(
-                'There was an error saving your feature request. Please try again later.',
-                ephemeral=True
-            )
+            # Check if we haven't responded yet before sending error message
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    'There was an error saving your feature request. Please try again later.',
+                    ephemeral=True
+                )
+            else:
+                # If we already responded, use followup
+                await interaction.followup.send(
+                    'There was an error saving your feature request. Please try again later.',
+                    ephemeral=True
+                )
 
     async def on_error(self, interaction: discord.Interaction, error: Exception) -> None:
-        await interaction.response.send_message('Oops! Something went wrong.', ephemeral=True)
+        # Check if the interaction has already been responded to
+        if not interaction.response.is_done():
+            await interaction.response.send_message('Oops! Something went wrong.', ephemeral=True)
+        else:
+            # If already responded, use followup instead
+            await interaction.followup.send('Oops! Something went wrong.', ephemeral=True)
+
+        # Log the error for debugging
+        logging.error(f"Modal error: {error}")
         traceback.print_exception(type(error), error, error.__traceback__)
+
 
 class FeatureRequestCog(commands.Cog):
     def __init__(self, bot):
@@ -58,6 +76,7 @@ class FeatureRequestCog(commands.Cog):
     @app_commands.command(name="feature_request", description="Submit a feature request for the bot")
     async def feature_request(self, interaction: discord.Interaction):
         await interaction.response.send_modal(FeatureRequest())
+
 
 async def setup(bot):
     guild_id = discord.Object(id=GUILD_ID)
