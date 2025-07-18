@@ -10,23 +10,49 @@ from discord import app_commands
 
 from src.utils.logging import setup_logging
 from src.config.settings import GUILD_ID
+from src.utils.permission_store import PermissionManager
 
 load_dotenv()
 setup_logging()
 logger = logging.getLogger(__name__)
 
-class Client(commands.Bot):
+class MyClient(commands.Bot):
+
+    def __init__(self) -> None:
+        # set the bot intents
+        intents = discord.Intents.default()
+        intents.message_content = True
+
+        super().__init__(command_prefix='!', intents=intents)
+
+        self.guild = discord.Object(id=GUILD_ID)
+
+        # set the permissions
+        self.ps = PermissionManager()
+
+        # override the self.tree.interaction_check method
+        self.tree.interaction_check = self.interaction_check
 
     async def on_ready(self):
         logger.info(f"{self.user} ready for commands")
 
-        # sync the app commands to discord
+        extensions = [
+            'src.cogs.utilities',
+            'src.cogs.quotes',
+            'src.cogs.games',
+            'src.cogs.feedback',
+            'src.cogs.permissions'
+        ]
+
+        for extension in extensions:
+            try:
+                await self.load_extension(extension)
+                logger.info(f"Loaded extension: {extension}")
+            except Exception as e:
+                logger.error(f"Failed to load extension {extension}: {e}")
+
         try:
-            guild = discord.Object(id=GUILD_ID)
-            await self.load_extension('src.cogs.utilities')
-            await self.load_extension('src.cogs.quotes')
-            await self.load_extension('src.cogs.games')
-            synced = await self.tree.sync(guild=guild)
+            synced = await self.tree.sync(guild=self.guild)
             logger.info(f"Synced {len(synced)} commands")
         except Exception as e:
             logger.error(f"Error syncing commands: {e}")
@@ -37,32 +63,34 @@ class Client(commands.Bot):
     async def on_disconnect(self):
         logger.info(f"{self.user} disconnected from discord")
 
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        """Global interaction check to ensure only authorized users can use the bot"""
+        logger.info(f"{interaction.user} ({interaction.user.id}) tried to use a command")
+        if interaction.user.id in self.ps.restricted_members:
+            await interaction.response.send_message("You are still in timeout")
+            return False
+        else:
+            return True
+
+    @staticmethod
+    async def on_app_command_completion(interaction: discord.Interaction,command):
+        logger.info(f"{interaction.user} ({interaction.user.id}) used command:  /{command.name}")
+
     async def on_message(self, message):
         if message.author == self.user:
             return
-
-        # Note: This functionality requires message_content intent to work properly
-        # For now, we only respond to mentions which should work without the intent
-        if self.user.mentioned_in(message):
-            await message.channel.send(f"Hello {message.author.mention}, I am the server's minigame bot!")
+        else:
             return
 
-        # Traditional command processing - requires message_content intent
-        # Since we primarily use slash commands, this is optional
-        await self.process_commands(message)
 
-
-
-intents = discord.Intents.default()
-intents.message_content = True
-client = Client(command_prefix="!", intents=intents)
 
 def main():
     # pass bot token to Client
-    bot_token = os.getenv("BOT_TOKEN")
+    bot_token = os.getenv("TEST_TOKEN")
     if not bot_token:
         logging.error("No bot token found in environment variables")
         sys.exit(1)
+    client = MyClient()
     client.run(bot_token)
 
 if __name__ == "__main__":
