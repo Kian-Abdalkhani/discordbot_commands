@@ -40,7 +40,7 @@ class MyClient(commands.Bot):
             'src.cogs.utilities',
             'src.cogs.quotes',
             'src.cogs.games',
-            'src.cogs.feedback',
+            'src.cogs.feature_request',
             'src.cogs.permissions'
         ]
 
@@ -86,7 +86,7 @@ class MyClient(commands.Bot):
 
 def main():
     # pass bot token to Client
-    bot_token = os.getenv("TEST_TOKEN")
+    bot_token = os.getenv("BOT_TOKEN")
     if not bot_token:
         logging.error("No bot token found in environment variables")
         sys.exit(1)
