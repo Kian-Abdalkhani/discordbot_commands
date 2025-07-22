@@ -8,7 +8,7 @@ from discord import app_commands
 import logging
 
 from src.config.settings import GUILD_ID
-from src.utils.currency_manager import CurrencyManager
+from src.config.settings import BLACKJACK_PAYOUT_MULTIPLIER
 
 logger = logging.getLogger(__name__)
 
@@ -145,8 +145,8 @@ class BlackjackCog(commands.Cog):
             payout = 0
             if result_type == "wins":
                 if is_blackjack:
-                    # Blackjack pays 2.5x (bet + 1.5x bet)
-                    payout = int(bet * 2.5)
+                    # Blackjack pays 2.25x (bet + 1.5x bet)
+                    payout = int(bet * BLACKJACK_PAYOUT_MULTIPLIER)
                 else:
                     # Regular win pays 2x (bet + bet)
                     payout = bet * 2
@@ -216,7 +216,7 @@ class BlackjackCog(commands.Cog):
                     if result.startswith("🤝"):  # Tie
                         embed.add_field(name="💰 Payout", value=f"${payout:,} (bet returned)", inline=True)
                     elif is_blackjack:
-                        embed.add_field(name="💰 Payout", value=f"${payout:,} (2.5x bet!)", inline=True)
+                        embed.add_field(name="💰 Payout", value=f"${payout:,} ({BLACKJACK_PAYOUT_MULTIPLIER}x bet!)", inline=True)
                     else:
                         embed.add_field(name="💰 Payout", value=f"${payout:,} (2x bet)", inline=True)
                 else:

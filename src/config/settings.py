@@ -9,6 +9,9 @@ GUILD_ID = int(os.getenv("GUILD_ID"))
 # Daily payout
 DAILY_CLAIM = 5_000
 
+#blackjack payout multiplier (bet * payout) = gain
+BLACKJACK_PAYOUT_MULTIPLIER = 2.5
+
 # Hangman word lists for different difficulty levels
 HANGMAN_WORD_LISTS = {
     "easy": [
