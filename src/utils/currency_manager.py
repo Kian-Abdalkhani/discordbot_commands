@@ -4,6 +4,8 @@ import logging
 from datetime import datetime, timedelta
 from typing import Dict, Optional, Tuple
 
+from src.config.settings import DAILY_CLAIM
+
 logger = logging.getLogger(__name__)
 
 class CurrencyManager:
@@ -148,7 +150,7 @@ class CurrencyManager:
             return False, f"You already claimed your daily bonus! Next claim in {time_left}.", user_data["balance"]
         
         # Give daily bonus
-        daily_amount = 1000
+        daily_amount = DAILY_CLAIM
         new_balance = self.add_currency(user_id, daily_amount)
         
         # Update last claim time

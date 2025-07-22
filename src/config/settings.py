@@ -6,6 +6,9 @@ load_dotenv()
 
 GUILD_ID = int(os.getenv("GUILD_ID"))
 
+# Daily payout
+DAILY_CLAIM = 5_000
+
 # Hangman word lists for different difficulty levels
 HANGMAN_WORD_LISTS = {
     "easy": [

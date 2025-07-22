@@ -47,7 +47,7 @@ class CurrencyCog(commands.Cog):
         await interaction.response.send_message(embed=embed)
         logger.info(f"{interaction.user} checked balance for {target_user}: {formatted_balance}")
     
-    @app_commands.command(name="daily", description="Claim your daily bonus of $1,000")
+    @app_commands.command(name="daily", description="Claim your daily bonus of $5,000")
     async def daily(self, interaction: discord.Interaction):
         """Claim daily bonus"""
         user_id = str(interaction.user.id)
