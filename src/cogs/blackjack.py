@@ -25,7 +25,7 @@ class BlackjackCog(commands.Cog):
         self.load_blackjack_stats()
         
         # Initialize currency manager
-        self.currency_manager = CurrencyManager()
+        self.currency_manager = bot.currency_manager
 
     def load_blackjack_stats(self):
         """Load blackjack stats from JSON file"""
@@ -67,7 +67,8 @@ class BlackjackCog(commands.Cog):
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
-        
+
+        self.currency_manager.load_currency_data()
         # Check if user has enough currency
         current_balance = self.currency_manager.get_balance(user_id)
         if current_balance < bet:

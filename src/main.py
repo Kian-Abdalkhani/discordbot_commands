@@ -11,6 +11,7 @@ from discord import app_commands
 from src.utils.logging import setup_logging
 from src.config.settings import GUILD_ID
 from src.utils.permission_store import PermissionManager
+from src.utils.currency_manager import CurrencyManager
 
 load_dotenv()
 setup_logging()
@@ -27,6 +28,9 @@ class MyClient(commands.Bot):
         super().__init__(command_prefix='!', intents=intents)
 
         self.guild = discord.Object(id=GUILD_ID)
+
+        # set currency manager
+        self.currency_manager = CurrencyManager()
 
         # set the permissions
         self.ps = PermissionManager()

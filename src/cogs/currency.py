@@ -14,7 +14,9 @@ class CurrencyCog(commands.Cog):
     
     def __init__(self, bot):
         self.bot = bot
-        self.currency_manager = CurrencyManager()
+
+        # Initialize currency manager
+        self.currency_manager = bot.currency_manager
         logger.info("Currency system initialized")
         
         # Start the daily currency distribution task
