@@ -89,7 +89,7 @@ class MyClient(commands.Bot):
 
 def main():
     # pass bot token to Client
-    bot_token = os.getenv("TEST_TOKEN")
+    bot_token = os.getenv("BOT_TOKEN")
     if not bot_token:
         logging.error("No bot token found in environment variables")
         sys.exit(1)
