@@ -22,6 +22,7 @@ class MyClient(commands.Bot):
         # set the bot intents
         intents = discord.Intents.default()
         intents.message_content = True
+        intents.members = True  # Required for guild.get_member() to work
 
         super().__init__(command_prefix='!', intents=intents)
 

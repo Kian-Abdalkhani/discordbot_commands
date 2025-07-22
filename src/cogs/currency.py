@@ -156,9 +156,26 @@ class CurrencyCog(commands.Cog):
         leaderboard_text = ""
         for i, (user_id, data) in enumerate(sorted_users[:10], 1):
             try:
-                user = self.bot.get_user(int(user_id))
-                username = user.display_name if user else f"User {user_id}"
-            except:
+                # Get member from the guild to get server-specific name
+                member = interaction.guild.get_member(int(user_id))
+                if member:
+                    # Use display_name which shows server nickname or global display name
+                    username = member.display_name
+                else:
+                    # Fallback if member not found in guild - try cached user first
+                    user = self.bot.get_user(int(user_id))
+                    if user:
+                        username = user.display_name
+                    else:
+                        # Final fallback - fetch user from Discord API
+                        try:
+                            user = await self.bot.fetch_user(int(user_id))
+                            username = user.display_name
+                        except Exception as e:
+                            logger.debug(f"Failed to fetch user {user_id} from Discord API: {e}")
+                            username = f"User {user_id}"
+            except Exception as e:
+                logger.error(f"Error processing user {user_id} in leaderboard: {e}")
                 username = f"User {user_id}"
             
             balance = self.currency_manager.format_balance(data["balance"])
@@ -191,6 +208,64 @@ class CurrencyCog(commands.Cog):
         
         await interaction.response.send_message(embed=embed)
         logger.info(f"{interaction.user} viewed currency leaderboard")
+    
+    @app_commands.command(name="test_user_lookup", description="Test user lookup functionality (diagnostic)")
+    async def test_user_lookup(self, interaction: discord.Interaction):
+        """Diagnostic command to test user lookup functionality"""
+        user_id = str(interaction.user.id)
+        
+        embed = discord.Embed(
+            title="🔍 User Lookup Diagnostic",
+            color=discord.Color.blue()
+        )
+        
+        # Test all three lookup methods
+        results = []
+        
+        # Method 1: Guild member lookup
+        try:
+            member = interaction.guild.get_member(int(user_id))
+            if member:
+                results.append(f"✅ Guild Member: {member.display_name}")
+            else:
+                results.append("❌ Guild Member: Not found")
+        except Exception as e:
+            results.append(f"❌ Guild Member: Error - {e}")
+        
+        # Method 2: Cached user lookup
+        try:
+            user = self.bot.get_user(int(user_id))
+            if user:
+                results.append(f"✅ Cached User: {user.display_name}")
+            else:
+                results.append("❌ Cached User: Not found")
+        except Exception as e:
+            results.append(f"❌ Cached User: Error - {e}")
+        
+        # Method 3: API fetch
+        try:
+            user = await self.bot.fetch_user(int(user_id))
+            if user:
+                results.append(f"✅ API Fetch: {user.display_name}")
+            else:
+                results.append("❌ API Fetch: Not found")
+        except Exception as e:
+            results.append(f"❌ API Fetch: Error - {e}")
+        
+        embed.description = "\n".join(results)
+        embed.add_field(
+            name="Your User ID",
+            value=user_id,
+            inline=False
+        )
+        embed.add_field(
+            name="Bot Intents",
+            value=f"Members: {self.bot.intents.members}\nUsers: {self.bot.intents.default()}",
+            inline=False
+        )
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        logger.info(f"{interaction.user} ran user lookup diagnostic")
     
     @tasks.loop(hours=1)
     async def daily_distribution_task(self):

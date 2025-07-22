@@ -53,7 +53,7 @@ class BlackjackCog(commands.Cog):
             logger.error(f"Error saving blackjack stats: {e}")
 
     @app_commands.command(name="blackjack", description="Plays a game of blackjack with betting")
-    @app_commands.describe(bet="Amount to bet (minimum $10, maximum $10,000)")
+    @app_commands.describe(bet="Amount to bet (default: 100)")
     async def blackjack(self, interaction: discord.Interaction, bet: int = 100):
         """Plays a game of blackjack with betting"""
         user_id = str(interaction.user.id)
@@ -63,15 +63,6 @@ class BlackjackCog(commands.Cog):
             embed = discord.Embed(
                 title="❌ Invalid Bet",
                 description="Minimum bet is $10!",
-                color=discord.Color.red()
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            return
-        
-        if bet > 10000:
-            embed = discord.Embed(
-                title="❌ Invalid Bet",
-                description="Maximum bet is $10,000!",
                 color=discord.Color.red()
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
