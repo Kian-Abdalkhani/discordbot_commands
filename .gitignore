@@ -164,3 +164,10 @@ cython_debug/
 
 /data/quotes.json
 /.idea/.gitignore
+/.idea/discordbot.iml
+/.idea/misc.xml
+/.idea/modules.xml
+/.idea/inspectionProfiles/profiles_settings.xml
+/.idea/inspectionProfiles/Project_Default.xml
+/.idea/vcs.xml
+/.idea/webResources.xml
