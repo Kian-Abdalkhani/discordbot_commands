@@ -3,7 +3,7 @@ import pytest_mock
 import discord
 from discord.ext import commands
 from unittest.mock import AsyncMock, MagicMock, patch
-from src.main import Client
+from src.main import MyClient
 
 
 class TestClient:
@@ -27,10 +27,10 @@ class TestClient:
         intents.message_content = True
         intents.members = True
 
-        # Mock the Client class to avoid discord connection issues
-        with patch('src.main.Client') as MockClient:
-            client = MagicMock(spec=Client)
-            MockClient.return_value = client
+        # Mock the MyClient class to avoid discord connection issues
+        with patch('src.main.MyClient') as MockMyClient:
+            client = MagicMock(spec=MyClient)
+            MockMyClient.return_value = client
 
             # Set up the mock client
             mock_user = MagicMock()
@@ -43,23 +43,23 @@ class TestClient:
             client.process_commands = AsyncMock()
 
             # Add the actual methods we want to test
-            client.on_ready = Client.on_ready.__get__(client, Client)
-            client.on_connect = Client.on_connect.__get__(client, Client)
-            client.on_disconnect = Client.on_disconnect.__get__(client, Client)
-            client.on_message = Client.on_message.__get__(client, Client)
+            client.on_ready = MyClient.on_ready.__get__(client, MyClient)
+            client.on_connect = MyClient.on_connect.__get__(client, MyClient)
+            client.on_disconnect = MyClient.on_disconnect.__get__(client, MyClient)
+            client.on_message = MyClient.on_message.__get__(client, MyClient)
 
             return client
 
     def test_client_initialization(self):
-        # Test that Client can be initialized with correct parameters
+        # Test that MyClient can be initialized with correct parameters
         intents = discord.Intents.default()
         intents.message_content = True
         intents.members = True
 
-        client = Client(command_prefix="!", intents=intents)
+        client = MyClient()
 
         # Verify the client was created successfully
-        assert isinstance(client, Client)
+        assert isinstance(client, MyClient)
         assert isinstance(client, commands.Bot)
 
     @pytest.mark.asyncio
@@ -78,9 +78,11 @@ class TestClient:
             await client_instance.on_ready()
 
             # Verify extensions were loaded
-            client_instance.load_extension.assert_any_call('cogs.utilities')
-            client_instance.load_extension.assert_any_call('cogs.quotes')
-            client_instance.load_extension.assert_any_call('cogs.games')
+            client_instance.load_extension.assert_any_call('src.cogs.utilities')
+            client_instance.load_extension.assert_any_call('src.cogs.quotes')
+            client_instance.load_extension.assert_any_call('src.cogs.games')
+            client_instance.load_extension.assert_any_call('src.cogs.feature_request')
+            client_instance.load_extension.assert_any_call('src.cogs.permissions')
 
             # Verify tree sync was called
             client_instance.tree.sync.assert_called_once_with(guild=mock_guild)
