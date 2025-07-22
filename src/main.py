@@ -36,13 +36,16 @@ class MyClient(commands.Bot):
     async def on_ready(self):
         logger.info(f"{self.user} ready for commands")
 
-        extensions = [
-            'src.cogs.utilities',
-            'src.cogs.quotes',
-            'src.cogs.games',
-            'src.cogs.feature_request',
-            'src.cogs.permissions'
-        ]
+        # Automatically discover all cog modules in src/cogs/ folder
+        cogs_dir = os.path.join(os.path.dirname(__file__), 'cogs')
+        extensions = []
+        
+        for filename in os.listdir(cogs_dir):
+            if filename.endswith('.py') and filename != '__init__.py':
+                module_name = filename[:-3]  # Remove .py extension
+                extensions.append(f'src.cogs.{module_name}')
+        
+        logger.info(f"Discovered extensions: {extensions}")
 
         for extension in extensions:
             try:
@@ -86,7 +89,7 @@ class MyClient(commands.Bot):
 
 def main():
     # pass bot token to Client
-    bot_token = os.getenv("BOT_TOKEN")
+    bot_token = os.getenv("TEST_TOKEN")
     if not bot_token:
         logging.error("No bot token found in environment variables")
         sys.exit(1)

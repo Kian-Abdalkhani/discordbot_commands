@@ -5,3 +5,45 @@ from dotenv import load_dotenv
 load_dotenv()
 
 GUILD_ID = int(os.getenv("GUILD_ID"))
+
+# Hangman word lists for different difficulty levels
+HANGMAN_WORD_LISTS = {
+    "easy": [
+        "cat", "dog", "sun", "car", "hat", "run", "fun", "big", "red", "hot",
+        "cup", "pen", "box", "egg", "ice", "key", "map", "net", "owl", "pig",
+        "bat", "bee", "bus", "cow", "day", "ear", "eye", "fan", "fox", "gem",
+        "gun", "hen", "jam", "jet", "kid", "leg", "man", "mom", "nut", "pan",
+        "rat", "sea", "toy", "van", "web", "zoo", "arm", "bag", "bed", "bug",
+        "cap", "dad", "den", "dot", "end", "fig", "gas", "hug", "ink", "job",
+        "kit", "lap", "mud", "nap", "old", "pot", "rug", "sad", "top", "use",
+        "win", "yes", "zip", "age", "air", "art", "bad", "boy", "can", "cut"
+    ],
+    "medium": [
+        "apple", "beach", "chair", "dance", "eagle", "flame", "grape", "house",
+        "island", "jungle", "knight", "lemon", "magic", "ocean", "piano", "queen",
+        "river", "snake", "tiger", "uncle", "voice", "water", "zebra", "bridge",
+        "castle", "dragon", "flower", "garden", "hammer", "jacket", "kitten", "ladder",
+        "market", "nature", "orange", "palace", "rabbit", "silver", "temple", "violet",
+        "window", "yellow", "anchor", "bottle", "candle", "dinner", "engine", "forest",
+        "guitar", "helmet", "insect", "jungle", "kernel", "lizard", "monkey", "needle",
+        "office", "pencil", "quartz", "rocket", "shadow", "turtle", "unique", "valley",
+        "wizard", "yogurt", "zipper", "animal", "butter", "circle", "double", "eleven",
+        "frozen", "global", "handle", "island", "jigsaw", "kettle", "legend", "marble"
+    ],
+    "hard": [
+        "adventure", "beautiful", "challenge", "dangerous", "elephant", "fantastic",
+        "gorgeous", "happiness", "important", "knowledge", "landscape", "mountain",
+        "necessary", "opportunity", "powerful", "question", "remember", "strength",
+        "together", "umbrella", "vacation", "wonderful", "yesterday", "zeppelin",
+        "absolute", "birthday", "computer", "delivery", "exercise", "football", "generate",
+        "hospital", "internet", "jealousy", "keyboard", "language", "magazine", "notebook",
+        "organize", "painting", "quantity", "research", "sandwich", "telephone", "universe",
+        "vegetable", "workshop", "xylophone", "yourself", "zoology", "airplane", "building",
+        "calendar", "document", "elephant", "festival", "graceful", "hardware", "identity",
+        "junction", "kindness", "laughter", "midnight", "negative", "opposite", "positive",
+        "quotient", "republic", "standard", "triangle", "umbrella", "velocity", "wildlife",
+        "xenophobia", "yearbook", "zucchini", "abstract", "bachelor", "category", "database",
+        "envelope", "feedback", "graphics", "headline", "infinite", "junction", "keyboard",
+        "location", "material", "national", "original", "platform", "question", "relative"
+    ]
+}

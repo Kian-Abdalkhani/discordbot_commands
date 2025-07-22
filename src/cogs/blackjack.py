@@ -8,6 +8,7 @@ from discord import app_commands
 import logging
 
 from src.config.settings import GUILD_ID
+from src.utils.currency_manager import CurrencyManager
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,9 @@ class BlackjackCog(commands.Cog):
             os.path.dirname(os.path.dirname(__file__))),
             "data", "blackjack_stats.json")
         self.load_blackjack_stats()
+        
+        # Initialize currency manager
+        self.currency_manager = CurrencyManager()
 
     def load_blackjack_stats(self):
         """Load blackjack stats from JSON file"""
@@ -48,10 +52,54 @@ class BlackjackCog(commands.Cog):
         except Exception as e:
             logger.error(f"Error saving blackjack stats: {e}")
 
-    @app_commands.command(name="blackjack", description="Plays a game of blackjack")
-    async def blackjack(self, interaction: discord.Interaction):
-        """Plays a game of blackjack"""
-        logger.info(f"{interaction.user} started a blackjack game")
+    @app_commands.command(name="blackjack", description="Plays a game of blackjack with betting")
+    @app_commands.describe(bet="Amount to bet (minimum $10, maximum $10,000)")
+    async def blackjack(self, interaction: discord.Interaction, bet: int = 100):
+        """Plays a game of blackjack with betting"""
+        user_id = str(interaction.user.id)
+        
+        # Validate bet amount
+        if bet < 10:
+            embed = discord.Embed(
+                title="❌ Invalid Bet",
+                description="Minimum bet is $10!",
+                color=discord.Color.red()
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+        
+        if bet > 10000:
+            embed = discord.Embed(
+                title="❌ Invalid Bet",
+                description="Maximum bet is $10,000!",
+                color=discord.Color.red()
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+        
+        # Check if user has enough currency
+        current_balance = self.currency_manager.get_balance(user_id)
+        if current_balance < bet:
+            embed = discord.Embed(
+                title="❌ Insufficient Funds",
+                description=f"You need ${bet:,} to play but only have {self.currency_manager.format_balance(current_balance)}!",
+                color=discord.Color.red()
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+        
+        # Deduct bet from user's balance
+        success, new_balance = self.currency_manager.subtract_currency(user_id, bet)
+        if not success:
+            embed = discord.Embed(
+                title="❌ Transaction Failed",
+                description="Failed to process bet. Please try again.",
+                color=discord.Color.red()
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+        
+        logger.info(f"{interaction.user} started a blackjack game with bet ${bet}")
 
         # Card representations
         suits = ['♥', '♦', '♣', '♠']
@@ -93,22 +141,48 @@ class BlackjackCog(commands.Cog):
                 return f"{hand[0][0]}{hand[0][1]} | ??"
             return " | ".join(f"{card[0]}{card[1]}" for card in hand)
 
-        # Helper function to update player statistics
-        def update_player_stats(result_type):
+        # Helper function to update player statistics and handle currency payouts
+        def update_player_stats(result_type, is_blackjack=False):
             user_id = str(interaction.user.id)
             if user_id not in self.player_stats:
                 self.player_stats[user_id] = {"wins": 0, "losses": 0, "ties": 0}
 
             self.player_stats[user_id][result_type] += 1
+            
+            # Handle currency payouts
+            payout = 0
+            if result_type == "wins":
+                if is_blackjack:
+                    # Blackjack pays 2.5x (bet + 1.5x bet)
+                    payout = int(bet * 2.5)
+                else:
+                    # Regular win pays 2x (bet + bet)
+                    payout = bet * 2
+                self.currency_manager.add_currency(user_id, payout)
+                logger.info(f"Player {user_id} won ${payout} (bet: ${bet}, blackjack: {is_blackjack})")
+            elif result_type == "ties":
+                # Return the original bet
+                payout = bet
+                self.currency_manager.add_currency(user_id, payout)
+                logger.info(f"Player {user_id} tied, returned ${payout}")
+            # For losses, no payout (bet was already deducted)
+            
             logger.info(f"Updated blackjack stats for {interaction.user}: {self.player_stats[user_id]}")
             self.save_blackjack_stats()
+            return payout
 
         # Function to display game state
         async def display_game_state(hide_dealer=True, final=False):
             player_value = calculate_value(player_hand)
             dealer_value = calculate_value(dealer_hand)
 
-            embed = discord.Embed(title="Blackjack", color=discord.Color.green())
+            embed = discord.Embed(title="🃏 Blackjack", color=discord.Color.green())
+            
+            # Show bet information
+            embed.add_field(name="💰 Bet", value=f"${bet:,}", inline=True)
+            current_balance = self.currency_manager.get_balance(user_id)
+            embed.add_field(name="💳 Balance", value=self.currency_manager.format_balance(current_balance), inline=True)
+            embed.add_field(name="\u200b", value="\u200b", inline=True)  # Empty field for spacing
 
             if hide_dealer:
                 embed.add_field(name="Dealer's Hand", value=format_hand(dealer_hand, True), inline=False)
@@ -119,23 +193,46 @@ class BlackjackCog(commands.Cog):
 
             if final:
                 result = ""
+                payout = 0
+                is_blackjack = False
+                
                 if player_value > 21:
-                    result = "You busted! Dealer wins."
-                    update_player_stats("losses")
+                    result = "💥 You busted! Dealer wins."
+                    payout = update_player_stats("losses")
                 elif dealer_value > 21:
-                    result = "Dealer busted! You win!"
-                    update_player_stats("wins")
+                    result = "🎉 Dealer busted! You win!"
+                    payout = update_player_stats("wins")
                 elif player_value > dealer_value:
-                    result = "You win!"
-                    update_player_stats("wins")
+                    # Check if it's a blackjack (21 with 2 cards)
+                    if player_value == 21 and len(player_hand) == 2:
+                        result = "🃏 BLACKJACK! You win!"
+                        is_blackjack = True
+                    else:
+                        result = "🎉 You win!"
+                    payout = update_player_stats("wins", is_blackjack)
                 elif dealer_value > player_value:
-                    result = "Dealer wins."
-                    update_player_stats("losses")
+                    result = "😔 Dealer wins."
+                    payout = update_player_stats("losses")
                 else:
-                    result = "It's a tie!"
-                    update_player_stats("ties")
+                    result = "🤝 It's a tie!"
+                    payout = update_player_stats("ties")
 
                 embed.add_field(name="Result", value=result, inline=False)
+                
+                # Show payout information
+                if payout > 0:
+                    if result.startswith("🤝"):  # Tie
+                        embed.add_field(name="💰 Payout", value=f"${payout:,} (bet returned)", inline=True)
+                    elif is_blackjack:
+                        embed.add_field(name="💰 Payout", value=f"${payout:,} (2.5x bet!)", inline=True)
+                    else:
+                        embed.add_field(name="💰 Payout", value=f"${payout:,} (2x bet)", inline=True)
+                else:
+                    embed.add_field(name="💰 Payout", value="$0", inline=True)
+                
+                # Show new balance
+                new_balance = self.currency_manager.get_balance(user_id)
+                embed.add_field(name="💳 New Balance", value=self.currency_manager.format_balance(new_balance), inline=True)
 
             return embed
 
@@ -151,7 +248,7 @@ class BlackjackCog(commands.Cog):
             # Natural blackjack - determine winner
             if player_value == 21 and dealer_value != 21:
                 # Player has natural blackjack
-                update_player_stats("wins")
+                update_player_stats("wins", is_blackjack=True)
             elif dealer_value == 21 and player_value != 21:
                 # Dealer has natural blackjack
                 update_player_stats("losses")
@@ -188,14 +285,10 @@ class BlackjackCog(commands.Cog):
                     break
 
             except asyncio.TimeoutError:
-                await interaction.followup.send("Game timed out.")
+                await interaction.followup.send("⏰ Game timed out. This counts as a loss.")
                 # Count timeout as a loss
-                user_id = str(interaction.user.id)
-                if user_id not in self.player_stats:
-                    self.player_stats[user_id] = {"wins": 0, "losses": 0, "ties": 0}
-                self.player_stats[user_id]["losses"] += 1
+                update_player_stats("losses")
                 logger.info(f"Blackjack game timed out for {interaction.user}. Counted as a loss.")
-                self.save_blackjack_stats()
                 return
 
         # Dealer's turn
