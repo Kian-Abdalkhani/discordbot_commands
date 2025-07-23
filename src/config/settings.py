@@ -12,6 +12,9 @@ DAILY_CLAIM = 5_000
 #blackjack payout multiplier (bet * payout) = gain
 BLACKJACK_PAYOUT_MULTIPLIER = 2.5
 
+# Stock market leverage multiplier
+STOCK_MARKET_LEVERAGE = 20
+
 # Hangman word lists for different difficulty levels
 HANGMAN_WORD_LISTS = {
     "easy": [
