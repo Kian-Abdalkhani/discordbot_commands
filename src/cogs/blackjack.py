@@ -237,17 +237,7 @@ class BlackjackCog(commands.Cog):
         dealer_value = calculate_value(dealer_hand)
 
         if player_value == 21 or dealer_value == 21:
-            # Natural blackjack - determine winner
-            if player_value == 21 and dealer_value != 21:
-                # Player has natural blackjack
-                update_player_stats("wins", is_blackjack=True)
-            elif dealer_value == 21 and player_value != 21:
-                # Dealer has natural blackjack
-                update_player_stats("losses")
-            elif player_value == 21 and dealer_value == 21:
-                # Both have natural blackjack - it's a tie
-                update_player_stats("ties")
-
+            # Natural blackjack - show final result (payout handled in display_game_state)
             await game_message.edit(embed=await display_game_state(hide_dealer=False, final=True))
             return
 
