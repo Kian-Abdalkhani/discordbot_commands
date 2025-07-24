@@ -104,6 +104,9 @@ class BlackjackCog(commands.Cog):
         # Deal initial cards
         player_hand = [deck.pop(), deck.pop()]
         dealer_hand = [deck.pop(), deck.pop()]
+        
+        # Initialize game state variables
+        doubled_down = False
 
         # Function to calculate hand value
         def calculate_value(hand):
@@ -171,7 +174,10 @@ class BlackjackCog(commands.Cog):
             embed = discord.Embed(title="🃏 Blackjack", color=discord.Color.green())
             
             # Show bet information
-            embed.add_field(name="💰 Bet", value=f"${bet:,}", inline=True)
+            bet_text = f"${bet:,}"
+            if doubled_down:
+                bet_text += " (Doubled Down!)"
+            embed.add_field(name="💰 Bet", value=bet_text, inline=True)
             current_balance = self.currency_manager.get_balance(user_id)
             embed.add_field(name="💳 Balance", value=self.currency_manager.format_balance(current_balance), inline=True)
             embed.add_field(name="\u200b", value="\u200b", inline=True)  # Empty field for spacing
@@ -241,14 +247,24 @@ class BlackjackCog(commands.Cog):
             await game_message.edit(embed=await display_game_state(hide_dealer=False, final=True))
             return
 
-        # Add hit/stand reactions
+        # Add hit/stand/double down reactions
         await game_message.add_reaction("👊")  # Hit
         await game_message.add_reaction("🛑")  # Stand
+        
+        # Check if user can afford to double down
+        current_balance = self.currency_manager.get_balance(user_id)
+        can_double_down = current_balance >= bet
+        if can_double_down:
+            await game_message.add_reaction("2️⃣")  # Double Down
 
         def check(reaction, user):
-            return user == interaction.user and str(reaction.emoji) in ["👊", "🛑"] and reaction.message.id == game_message.id
+            valid_emojis = ["👊", "🛑"]
+            if can_double_down:
+                valid_emojis.append("2️⃣")
+            return user == interaction.user and str(reaction.emoji) in valid_emojis and reaction.message.id == game_message.id
 
         # Player's turn
+        first_decision = True
         while calculate_value(player_hand) < 21:
             try:
                 reaction, user = await self.bot.wait_for("reaction_add", timeout=60.0, check=check)
@@ -259,11 +275,37 @@ class BlackjackCog(commands.Cog):
 
                     # Remove the user's reaction
                     await game_message.remove_reaction("👊", user)
+                    
+                    # After first hit, remove double down option
+                    if first_decision and can_double_down:
+                        await game_message.remove_reaction("2️⃣", self.bot.user)
+                        can_double_down = False
+                    first_decision = False
 
                     if calculate_value(player_hand) >= 21:
                         break
 
                 elif str(reaction.emoji) == "🛑":  # Stand
+                    break
+                    
+                elif str(reaction.emoji) == "2️⃣" and can_double_down and first_decision:  # Double Down
+                    # Double the bet
+                    success, new_balance = self.currency_manager.subtract_currency(user_id, bet)
+                    if not success:
+                        # This shouldn't happen since we checked balance, but handle it gracefully
+                        await interaction.followup.send("❌ Unable to double down - insufficient funds!", ephemeral=True)
+                        await game_message.remove_reaction("2️⃣", user)
+                        continue
+                    
+                    bet = bet * 2  # Update bet amount for payout calculation
+                    doubled_down = True
+                    
+                    # Deal exactly one card
+                    player_hand.append(deck.pop())
+                    await game_message.edit(embed=await display_game_state())
+                    
+                    # Remove the user's reaction and end turn
+                    await game_message.remove_reaction("2️⃣", user)
                     break
 
             except asyncio.TimeoutError:
