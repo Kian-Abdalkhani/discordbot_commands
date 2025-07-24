@@ -31,7 +31,12 @@ class HangmanCog(commands.Cog):
         try:
             if os.path.exists(self.stats_file):
                 with open(self.stats_file, 'r') as f:
-                    self.player_stats = json.load(f)
+                    # Check if file is empty before trying to load JSON
+                    file_content = f.read().strip()
+                    if file_content:
+                        self.player_stats = json.loads(file_content)
+                    else:
+                        logger.info(f"Empty hangman stats file at {self.stats_file}, starting with empty stats")
                 logger.info(f"Loaded hangman stats from {self.stats_file}")
             else:
                 logger.info(f"No hangman stats file found at {self.stats_file}, starting with empty stats")
