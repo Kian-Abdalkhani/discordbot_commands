@@ -112,9 +112,9 @@ class StockMarketManager:
     def get_popular_stocks(self) -> List[str]:
         """Get a list of popular stock symbols for suggestions"""
         return [
-            "AAPL", "MSFT", "GOOGL", "AMZN", "TSLA", "META", "NVDA", "NFLX",
-            "AMD", "INTC", "PYPL", "ADBE", "CRM", "ORCL", "IBM", "UBER",
-            "SPOT", "SNAP", "TWTR", "ZOOM", "SHOP", "SQ", "ROKU", "PINS"
+            "AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "NFLX",
+            "AMD",  "PYPL", "ADBE", "CRM", "ORCL", "IBM", "UBER",
+            "SPOT", "SNAP",  "ZOOM", "SHOP", "SQ", "ROKU", "PINS"
         ]
     
     def format_price(self, price: float) -> str:

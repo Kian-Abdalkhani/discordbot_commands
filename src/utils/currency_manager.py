@@ -250,9 +250,7 @@ class CurrencyManager:
         
         # Calculate profit/loss with leverage
         price_change = current_price - purchase_price
-        leveraged_price_change = price_change * leverage
-        profit_per_share = leveraged_price_change
-        total_profit = profit_per_share * shares
+        total_profit = price_change * shares
         
         # Calculate proceeds (original investment + profit/loss)
         original_investment_per_share = purchase_price / leverage
@@ -271,7 +269,7 @@ class CurrencyManager:
         
         self.save_currency_data()
         
-        profit_percentage = (profit_per_share / purchase_price) * 100
+        profit_percentage = (price_change / purchase_price) * 100
         logger.info(f"User {user_id} sold {shares} shares of {symbol} at ${current_price:.2f} for ${proceeds:.2f} profit/loss")
         
         profit_status = "profit" if total_profit >= 0 else "loss"
@@ -305,11 +303,9 @@ class CurrencyManager:
             leverage = position["leverage"]
             current_price = current_prices[symbol]
             
-            # Calculate proceeds using the same logic as sell_stock method
+            # Calculate proceeds using the same logic as the sell_stock method
             price_change = current_price - purchase_price
-            leveraged_price_change = price_change * leverage
-            profit_per_share = leveraged_price_change
-            total_profit = profit_per_share * shares
+            total_profit = price_change * shares
             
             # Calculate proceeds (original investment + profit/loss)
             original_investment_per_share = purchase_price / leverage
@@ -366,15 +362,13 @@ class CurrencyManager:
             leverage = position["leverage"]
             current_price = current_prices[symbol]
             
-            # Calculate current value with leverage
+            # Calculate the position value with leverage
             price_change = current_price - purchase_price
-            leveraged_price_change = price_change * leverage
-            current_value_per_share = purchase_price + leveraged_price_change
-            position_value = current_value_per_share * shares
+            position_value = current_price * shares
             
             # Calculate original investment amount
             original_investment = (purchase_price * shares) / leverage
-            profit_loss = leveraged_price_change * shares
+            profit_loss = price_change * shares
             
             total_value += position_value
             total_profit_loss += profit_loss
