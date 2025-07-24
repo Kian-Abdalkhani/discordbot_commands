@@ -222,8 +222,8 @@ class CurrencyManager:
         self.save_currency_data()
         
         total_value = shares * price
-        logger.info(f"User {user_id} bought {shares} shares of {symbol} at ${price:.2f} with {leverage}x leverage")
-        return True, f"Successfully bought {shares} shares of {symbol} at ${price:.2f} each (${total_value:,.2f} total value) with {leverage}x leverage!"
+        logger.info(f"User {user_id} bought {shares:,.2f} shares of {symbol} at ${price:.2f} with {leverage}x leverage")
+        return True, f"Successfully bought {shares:,.2f} shares of {symbol} at ${price:.2f} each (${total_value:,.2f} total value) with {leverage}x leverage!"
     
     def sell_stock(self, user_id: str, symbol: str, shares: float, current_price: float) -> Tuple[bool, str, float]:
         """
@@ -243,7 +243,7 @@ class CurrencyManager:
         owned_shares = position["shares"]
         
         if shares > owned_shares:
-            return False, f"You only own {owned_shares} shares of {symbol}, cannot sell {shares}.", 0.0
+            return False, f"You only own {owned_shares:,.2f} shares of {symbol}, cannot sell {shares:.2f}.", 0.0
         
         purchase_price = position["purchase_price"]
         leverage = position["leverage"]
@@ -255,6 +255,7 @@ class CurrencyManager:
         # Calculate proceeds (original investment + profit/loss)
         original_investment_per_share = purchase_price / leverage
         proceeds = (original_investment_per_share * shares) + total_profit
+        investment_amount = (shares * purchase_price) / leverage
         
         # Add proceeds to balance
         user_data["balance"] += proceeds
@@ -269,11 +270,11 @@ class CurrencyManager:
         
         self.save_currency_data()
         
-        profit_percentage = (price_change / purchase_price) * 100
-        logger.info(f"User {user_id} sold {shares} shares of {symbol} at ${current_price:.2f} for ${proceeds:.2f} profit/loss")
+        profit_percentage = (total_profit / investment_amount) * 100
+        logger.info(f"User {user_id} sold {shares:,.2f} shares of {symbol} at ${current_price:.2f} for ${proceeds:.2f} profit/loss")
         
         profit_status = "profit" if total_profit >= 0 else "loss"
-        return True, f"Successfully sold {shares} shares of {symbol} at ${current_price:.2f} each for a {profit_status} of ${abs(total_profit):,.2f} ({profit_percentage:+.2f}%)!", total_profit
+        return True, f"Successfully sold {shares:,.2f} shares of {symbol} at ${current_price:.2f} each for a {profit_status} of ${abs(total_profit):,.2f} ({profit_percentage:+.2f}%)!", total_profit
     
     def get_portfolio(self, user_id: str) -> Dict:
         """Get user's stock portfolio"""
