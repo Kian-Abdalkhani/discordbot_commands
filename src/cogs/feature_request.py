@@ -12,6 +12,8 @@ class FeatureRequest(discord.ui.Modal, title='Feature Request'):
     def __init__(self):
         super().__init__()
         self.feature_manager = FeatureRequestManager()
+        # Initialize the manager - this will be called when the modal is created
+        self._initialized = False
 
     name = discord.ui.TextInput(
         label='Name',
@@ -28,8 +30,13 @@ class FeatureRequest(discord.ui.Modal, title='Feature Request'):
 
     async def on_submit(self, interaction: discord.Interaction):
         try:
+            # Initialize the manager if not already done
+            if not self._initialized:
+                await self.feature_manager.initialize()
+                self._initialized = True
+            
             # Store the feature request
-            request_data = self.feature_manager.add_request(
+            request_data = await self.feature_manager.add_request(
                 name=self.name.value,
                 request_text=self.feature_request.value,
                 user_id=interaction.user.id,

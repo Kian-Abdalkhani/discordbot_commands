@@ -54,7 +54,7 @@ class StockMarketCog(commands.Cog):
             investment_amount = amount
             
             # Attempt to buy the stock
-            success, message = self.currency_manager.buy_stock(user_id, symbol, shares, current_price, leverage)
+            success, message = await self.currency_manager.buy_stock(user_id, symbol, shares, current_price, leverage)
             
             if success:
                 # Create success embed
@@ -76,7 +76,7 @@ class StockMarketCog(commands.Cog):
                 )
                 
                 # Show remaining balance
-                remaining_balance = self.currency_manager.get_balance(user_id)
+                remaining_balance = await self.currency_manager.get_balance(user_id)
                 embed.add_field(
                     name="💰 Remaining Balance",
                     value=f"${remaining_balance:,.2f}",
@@ -124,7 +124,7 @@ class StockMarketCog(commands.Cog):
                 return
             
             # Get user's portfolio
-            portfolio = self.currency_manager.get_portfolio(user_id)
+            portfolio = await self.currency_manager.get_portfolio(user_id)
             
             if symbol not in portfolio:
                 await interaction.followup.send(f"❌ You don't own any shares of {symbol}.", ephemeral=True)
@@ -175,7 +175,7 @@ class StockMarketCog(commands.Cog):
                 return
             
             # Attempt to sell the stock
-            success, message, profit_loss = self.currency_manager.sell_stock(user_id, symbol, shares_to_sell, current_price)
+            success, message, profit_loss = await self.currency_manager.sell_stock(user_id, symbol, shares_to_sell, current_price)
             
             if success:
                 # Create success embed
@@ -198,7 +198,7 @@ class StockMarketCog(commands.Cog):
                 )
                 
                 # Show remaining balance
-                remaining_balance = self.currency_manager.get_balance(user_id)
+                remaining_balance = await self.currency_manager.get_balance(user_id)
                 embed.add_field(
                     name="💰 New Balance",
                     value=f"${remaining_balance:,.2f}",
@@ -233,7 +233,7 @@ class StockMarketCog(commands.Cog):
             user_id = str(target_user.id)
             
             # Get portfolio
-            portfolio = self.currency_manager.get_portfolio(user_id)
+            portfolio = await self.currency_manager.get_portfolio(user_id)
             
             if not portfolio:
                 embed = discord.Embed(
@@ -249,10 +249,10 @@ class StockMarketCog(commands.Cog):
             current_prices = await self.stock_manager.get_multiple_prices(symbols)
             
             # Calculate portfolio value (this will also trigger automatic liquidation if needed)
-            total_value, total_profit_loss, position_details = self.currency_manager.calculate_portfolio_value(user_id, current_prices)
+            total_value, total_profit_loss, position_details = await self.currency_manager.calculate_portfolio_value(user_id, current_prices)
             
             # Check if any positions were liquidated and notify user
-            updated_portfolio = self.currency_manager.get_portfolio(user_id)
+            updated_portfolio = await self.currency_manager.get_portfolio(user_id)
             liquidated_symbols = []
             for symbol in symbols:
                 if symbol not in updated_portfolio and symbol not in position_details:
@@ -275,7 +275,7 @@ class StockMarketCog(commands.Cog):
                 )
             
             # Add portfolio summary
-            cash_balance = self.currency_manager.get_balance(user_id)
+            cash_balance = await self.currency_manager.get_balance(user_id)
             total_account_value = cash_balance + total_value
             
             embed.add_field(

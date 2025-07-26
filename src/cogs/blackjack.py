@@ -3,6 +3,7 @@ import asyncio
 import discord
 import json
 import os
+import aiofiles
 from discord.ext import commands
 from discord import app_commands
 import logging
@@ -22,17 +23,21 @@ class BlackjackCog(commands.Cog):
         self.stats_file = os.path.join(os.path.dirname(
             os.path.dirname(os.path.dirname(__file__))),
             "data", "blackjack_stats.json")
-        self.load_blackjack_stats()
         
         # Initialize currency manager
         self.currency_manager = bot.currency_manager
+    
+    async def cog_load(self):
+        """Called when the cog is loaded"""
+        await self.load_blackjack_stats()
 
-    def load_blackjack_stats(self):
+    async def load_blackjack_stats(self):
         """Load blackjack stats from JSON file"""
         try:
             if os.path.exists(self.stats_file):
-                with open(self.stats_file, 'r') as f:
-                    self.player_stats = json.load(f)
+                async with aiofiles.open(self.stats_file, 'r') as f:
+                    content = await f.read()
+                    self.player_stats = json.loads(content)
                 logger.info(f"Loaded blackjack stats from {self.stats_file}")
             else:
                 logger.info(f"No blackjack stats file found at {self.stats_file}, starting with empty stats")
@@ -40,14 +45,14 @@ class BlackjackCog(commands.Cog):
             logger.error(f"Error loading blackjack stats: {e}")
             self.player_stats = {}
 
-    def save_blackjack_stats(self):
+    async def save_blackjack_stats(self):
         """Save blackjack stats to JSON file"""
         try:
             # Ensure the directory exists
             os.makedirs(os.path.dirname(self.stats_file), exist_ok=True)
 
-            with open(self.stats_file, 'w') as f:
-                json.dump(self.player_stats, f, indent=4)
+            async with aiofiles.open(self.stats_file, 'w') as f:
+                await f.write(json.dumps(self.player_stats, indent=4))
             logger.info(f"Saved blackjack stats to {self.stats_file}")
         except Exception as e:
             logger.error(f"Error saving blackjack stats: {e}")
@@ -68,9 +73,9 @@ class BlackjackCog(commands.Cog):
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
 
-        self.currency_manager.load_currency_data()
+        await self.currency_manager.load_currency_data()
         # Check if user has enough currency
-        current_balance = self.currency_manager.get_balance(user_id)
+        current_balance = await self.currency_manager.get_balance(user_id)
         if current_balance < bet:
             embed = discord.Embed(
                 title="❌ Insufficient Funds",
@@ -81,7 +86,7 @@ class BlackjackCog(commands.Cog):
             return
         
         # Deduct bet from user's balance
-        success, new_balance = self.currency_manager.subtract_currency(user_id, bet)
+        success, new_balance = await self.currency_manager.subtract_currency(user_id, bet)
         if not success:
             embed = discord.Embed(
                 title="❌ Transaction Failed",
@@ -137,7 +142,7 @@ class BlackjackCog(commands.Cog):
             return " | ".join(f"{card[0]}{card[1]}" for card in hand)
 
         # Helper function to update player statistics and handle currency payouts
-        def update_player_stats(result_type, is_blackjack=False):
+        async def update_player_stats(result_type, is_blackjack=False):
             user_id = str(interaction.user.id)
             if user_id not in self.player_stats:
                 self.player_stats[user_id] = {"wins": 0, "losses": 0, "ties": 0}
@@ -153,17 +158,17 @@ class BlackjackCog(commands.Cog):
                 else:
                     # Regular win pays 2x (bet + bet)
                     payout = bet * 2
-                self.currency_manager.add_currency(user_id, payout)
+                await self.currency_manager.add_currency(user_id, payout)
                 logger.info(f"Player {user_id} won ${payout} (bet: ${bet}, blackjack: {is_blackjack})")
             elif result_type == "ties":
                 # Return the original bet
                 payout = bet
-                self.currency_manager.add_currency(user_id, payout)
+                await self.currency_manager.add_currency(user_id, payout)
                 logger.info(f"Player {user_id} tied, returned ${payout}")
             # For losses, no payout (bet was already deducted)
             
             logger.info(f"Updated blackjack stats for {interaction.user}: {self.player_stats[user_id]}")
-            self.save_blackjack_stats()
+            await self.save_blackjack_stats()
             return payout
 
         # Function to display game state
@@ -178,7 +183,7 @@ class BlackjackCog(commands.Cog):
             if doubled_down:
                 bet_text += " (Doubled Down!)"
             embed.add_field(name="💰 Bet", value=bet_text, inline=True)
-            current_balance = self.currency_manager.get_balance(user_id)
+            current_balance = await self.currency_manager.get_balance(user_id)
             embed.add_field(name="💳 Balance", value=self.currency_manager.format_balance(current_balance), inline=True)
             embed.add_field(name="\u200b", value="\u200b", inline=True)  # Empty field for spacing
 
@@ -196,10 +201,10 @@ class BlackjackCog(commands.Cog):
                 
                 if player_value > 21:
                     result = "💥 You busted! Dealer wins."
-                    payout = update_player_stats("losses")
+                    payout = await update_player_stats("losses")
                 elif dealer_value > 21:
                     result = "🎉 Dealer busted! You win!"
-                    payout = update_player_stats("wins")
+                    payout = await update_player_stats("wins")
                 elif player_value > dealer_value:
                     # Check if it's a blackjack (21 with 2 cards)
                     if player_value == 21 and len(player_hand) == 2:
@@ -207,13 +212,13 @@ class BlackjackCog(commands.Cog):
                         is_blackjack = True
                     else:
                         result = "🎉 You win!"
-                    payout = update_player_stats("wins", is_blackjack)
+                    payout = await update_player_stats("wins", is_blackjack)
                 elif dealer_value > player_value:
                     result = "😔 Dealer wins."
-                    payout = update_player_stats("losses")
+                    payout = await update_player_stats("losses")
                 else:
                     result = "🤝 It's a tie!"
-                    payout = update_player_stats("ties")
+                    payout = await update_player_stats("ties")
 
                 embed.add_field(name="Result", value=result, inline=False)
                 
@@ -229,7 +234,7 @@ class BlackjackCog(commands.Cog):
                     embed.add_field(name="💰 Payout", value="$0", inline=True)
                 
                 # Show new balance
-                new_balance = self.currency_manager.get_balance(user_id)
+                new_balance = await self.currency_manager.get_balance(user_id)
                 embed.add_field(name="💳 New Balance", value=self.currency_manager.format_balance(new_balance), inline=True)
 
             return embed
@@ -252,7 +257,7 @@ class BlackjackCog(commands.Cog):
         await game_message.add_reaction("🛑")  # Stand
         
         # Check if user can afford to double down
-        current_balance = self.currency_manager.get_balance(user_id)
+        current_balance = await self.currency_manager.get_balance(user_id)
         can_double_down = current_balance >= bet
         if can_double_down:
             await game_message.add_reaction("2️⃣")  # Double Down
@@ -290,7 +295,7 @@ class BlackjackCog(commands.Cog):
                     
                 elif str(reaction.emoji) == "2️⃣" and can_double_down and first_decision:  # Double Down
                     # Double the bet
-                    success, new_balance = self.currency_manager.subtract_currency(user_id, bet)
+                    success, new_balance = await self.currency_manager.subtract_currency(user_id, bet)
                     if not success:
                         # This shouldn't happen since we checked balance, but handle it gracefully
                         await interaction.followup.send("❌ Unable to double down - insufficient funds!", ephemeral=True)
@@ -311,7 +316,7 @@ class BlackjackCog(commands.Cog):
             except asyncio.TimeoutError:
                 await interaction.followup.send("⏰ Game timed out. This counts as a loss.")
                 # Count timeout as a loss
-                update_player_stats("losses")
+                await update_player_stats("losses")
                 logger.info(f"Blackjack game timed out for {interaction.user}. Counted as a loss.")
                 return
 

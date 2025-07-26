@@ -5,6 +5,7 @@ import random
 import json
 import os
 import discord
+import aiofiles
 
 from src.config.settings import GUILD_ID
 
@@ -19,14 +20,18 @@ class QuotesCog(commands.Cog):
         self.quotes_file = os.path.join(os.path.dirname(
             os.path.dirname(os.path.dirname(__file__))),
             "data", "quotes.json")
-        self._load_quotes()
+    
+    async def cog_load(self):
+        """Called when the cog is loaded"""
+        await self._load_quotes()
 
-    def _load_quotes(self):
+    async def _load_quotes(self):
         """Load quotes from file if it exists"""
         try:
             if os.path.exists(self.quotes_file):
-                with open(self.quotes_file, 'r') as f:
-                    data = json.load(f)
+                async with aiofiles.open(self.quotes_file, 'r') as f:
+                    content = await f.read()
+                    data = json.loads(content)
                     self.quotes = data.get('quotes', {})
                     self.quote_counter = data.get('counter', 0)
                 logger.info(f"Loaded {len(self.quotes)} quotes from {self.quotes_file}")
@@ -35,14 +40,17 @@ class QuotesCog(commands.Cog):
         except Exception as e:
             logger.error(f"Error loading quotes: {e}")
 
-    def _save_quotes(self):
+    async def _save_quotes(self):
         """Save quotes to file"""
         try:
-            with open(self.quotes_file, 'w') as f:
-                json.dump({
+            # Ensure the directory exists
+            os.makedirs(os.path.dirname(self.quotes_file), exist_ok=True)
+            
+            async with aiofiles.open(self.quotes_file, 'w') as f:
+                await f.write(json.dumps({
                     'quotes': self.quotes,
                     'counter': self.quote_counter
-                }, f, indent=2)
+                }, indent=2))
             logger.info(f"Saved {len(self.quotes)} quotes to {self.quotes_file}")
         except Exception as e:
             logger.error(f"Error saving quotes: {e}")
@@ -67,7 +75,7 @@ class QuotesCog(commands.Cog):
             "added_at": interaction.created_at.isoformat()
         }
 
-        self._save_quotes()
+        await self._save_quotes()
 
         logger.info(f"{interaction.user} added quote #{quote_id}: '{quote_text}' by {quote_author}")
         await interaction.response.send_message(f"Quote #{quote_id} added successfully!")
@@ -87,6 +95,9 @@ class QuotesCog(commands.Cog):
         if quote_id is None:
             # Get a random quote
             quote_id = random.choice(list(self.quotes.keys()))
+        else:
+            # Convert quote_id to string to match the keys in the quotes dictionary
+            quote_id = str(quote_id)
 
         if quote_id in self.quotes:
             quote = self.quotes[quote_id]
@@ -188,7 +199,7 @@ class QuotesCog(commands.Cog):
         """
         if quote_id in self.quotes:
             del self.quotes[quote_id]
-            self._save_quotes()
+            await self._save_quotes()
 
             logger.info(f"{interaction.user} deleted quote #{quote_id}")
             await interaction.response.send_message(f"Quote #{quote_id} has been deleted.")

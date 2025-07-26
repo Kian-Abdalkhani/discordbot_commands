@@ -3,6 +3,7 @@ import asyncio
 import discord
 import json
 import os
+import aiofiles
 from discord.ext import commands
 from discord import app_commands
 import logging
@@ -21,18 +22,22 @@ class HangmanCog(commands.Cog):
         self.stats_file = os.path.join(os.path.dirname(
             os.path.dirname(os.path.dirname(__file__))),
             "data", "hangman_stats.json")
-        self.load_hangman_stats()
         
         # Import word lists from settings
         self.word_lists = HANGMAN_WORD_LISTS
+    
+    async def cog_load(self):
+        """Called when the cog is loaded"""
+        await self.load_hangman_stats()
 
-    def load_hangman_stats(self):
+    async def load_hangman_stats(self):
         """Load hangman stats from JSON file"""
         try:
             if os.path.exists(self.stats_file):
-                with open(self.stats_file, 'r') as f:
+                async with aiofiles.open(self.stats_file, 'r') as f:
                     # Check if file is empty before trying to load JSON
-                    file_content = f.read().strip()
+                    file_content = await f.read()
+                    file_content = file_content.strip()
                     if file_content:
                         self.player_stats = json.loads(file_content)
                     else:
@@ -44,14 +49,14 @@ class HangmanCog(commands.Cog):
             logger.error(f"Error loading hangman stats: {e}")
             self.player_stats = {}
 
-    def save_hangman_stats(self):
+    async def save_hangman_stats(self):
         """Save hangman stats to JSON file"""
         try:
             # Ensure the directory exists
             os.makedirs(os.path.dirname(self.stats_file), exist_ok=True)
 
-            with open(self.stats_file, 'w') as f:
-                json.dump(self.player_stats, f, indent=4)
+            async with aiofiles.open(self.stats_file, 'w') as f:
+                await f.write(json.dumps(self.player_stats, indent=4))
             logger.info(f"Saved hangman stats to {self.stats_file}")
         except Exception as e:
             logger.error(f"Error saving hangman stats: {e}")
@@ -150,7 +155,7 @@ class HangmanCog(commands.Cog):
         max_wrong_guesses = 6
 
         # Helper function to update player statistics
-        def update_player_stats(result_type):
+        async def update_player_stats(result_type):
             user_id = str(interaction.user.id)
             if user_id not in self.player_stats:
                 self.player_stats[user_id] = {"wins": 0, "losses": 0, "games_played": 0}
@@ -158,7 +163,7 @@ class HangmanCog(commands.Cog):
             self.player_stats[user_id][result_type] += 1
             self.player_stats[user_id]["games_played"] += 1
             logger.info(f"Updated hangman stats for {interaction.user}: {self.player_stats[user_id]}")
-            self.save_hangman_stats()
+            await self.save_hangman_stats()
 
         # Function to display current game state
         def display_game_state():
@@ -269,7 +274,7 @@ class HangmanCog(commands.Cog):
                             value=f"You won! The word was **{word}**", 
                             inline=False
                         )
-                        update_player_stats("wins")
+                        await update_player_stats("wins")
                         await interaction.edit_original_response(embed=embed, content="**Game Over - You Won!**")
                         break
                     else:
@@ -291,7 +296,7 @@ class HangmanCog(commands.Cog):
                             value=f"You lost! The word was **{word}**", 
                             inline=False
                         )
-                        update_player_stats("losses")
+                        await update_player_stats("losses")
                         await interaction.edit_original_response(embed=embed, content="**Game Over - You Lost!**")
                         break
                     else:
@@ -310,7 +315,7 @@ class HangmanCog(commands.Cog):
                     value=f"Game timed out! The word was **{word}**", 
                     inline=False
                 )
-                update_player_stats("losses")
+                await update_player_stats("losses")
                 await interaction.edit_original_response(
                     embed=embed, 
                     content="**Game Over - Time's Up!**"

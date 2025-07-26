@@ -29,9 +29,9 @@ class CurrencyCog(commands.Cog):
         user_id = str(target_user.id)
         
         # Reload currency data to ensure we have the most current balance
-        self.currency_manager.load_currency_data()
+        await self.currency_manager.load_currency_data()
         
-        balance = self.currency_manager.get_balance(user_id)
+        balance = await self.currency_manager.get_balance(user_id)
         formatted_balance = self.currency_manager.format_balance(balance)
         
         embed = discord.Embed(
@@ -52,7 +52,7 @@ class CurrencyCog(commands.Cog):
         """Claim daily bonus"""
         user_id = str(interaction.user.id)
         
-        success, message, new_balance = self.currency_manager.claim_daily_bonus(user_id)
+        success, message, new_balance = await self.currency_manager.claim_daily_bonus(user_id)
         
         embed = discord.Embed(
             title="🎁 Daily Bonus",
@@ -96,12 +96,12 @@ class CurrencyCog(commands.Cog):
             return
 
         # Reload currency data to ensure we have the most current balance
-        self.currency_manager.load_currency_data()
+        await self.currency_manager.load_currency_data()
         
         from_user_id = str(interaction.user.id)
         to_user_id = str(user.id)
         
-        success, message = self.currency_manager.transfer_currency(from_user_id, to_user_id, amount)
+        success, message = await self.currency_manager.transfer_currency(from_user_id, to_user_id, amount)
         
         embed = discord.Embed(
             title="💸 Currency Transfer",
@@ -110,8 +110,8 @@ class CurrencyCog(commands.Cog):
         )
         
         if success:
-            from_balance = self.currency_manager.get_balance(from_user_id)
-            to_balance = self.currency_manager.get_balance(to_user_id)
+            from_balance = await self.currency_manager.get_balance(from_user_id)
+            to_balance = await self.currency_manager.get_balance(to_user_id)
             
             embed.add_field(
                 name="Your New Balance",
@@ -278,7 +278,7 @@ class CurrencyCog(commands.Cog):
             eligible_users = []
             
             for user_id, data in currency_data.items():
-                can_claim, _ = self.currency_manager.can_claim_daily(user_id)
+                can_claim, _ = await self.currency_manager.can_claim_daily(user_id)
                 if can_claim:
                     eligible_users.append(user_id)
             
@@ -286,7 +286,7 @@ class CurrencyCog(commands.Cog):
                 logger.info(f"Auto-distributing daily bonuses to {len(eligible_users)} eligible users")
                 
                 for user_id in eligible_users:
-                    success, message, new_balance = self.currency_manager.claim_daily_bonus(user_id)
+                    success, message, new_balance = await self.currency_manager.claim_daily_bonus(user_id)
                     if success:
                         logger.info(f"Auto-distributed daily bonus to user {user_id}: {message}")
                 

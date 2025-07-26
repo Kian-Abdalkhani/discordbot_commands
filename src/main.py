@@ -41,6 +41,10 @@ class MyClient(commands.Bot):
     async def on_ready(self):
         logger.info(f"{self.user} ready for commands")
 
+        # Initialize async managers
+        await self.ps.initialize()
+        await self.currency_manager.initialize()
+
         # Automatically discover all cog modules in src/cogs/ folder
         cogs_dir = os.path.join(os.path.dirname(__file__), 'cogs')
         extensions = []
