@@ -7,7 +7,7 @@ load_dotenv()
 GUILD_ID = int(os.getenv("GUILD_ID"))
 
 # Daily payout
-DAILY_CLAIM = 5_000
+DAILY_CLAIM = 10_000
 
 #blackjack payout multiplier (bet * payout) = gain
 BLACKJACK_PAYOUT_MULTIPLIER = 2.5
