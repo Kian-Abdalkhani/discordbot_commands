@@ -15,6 +15,9 @@ BLACKJACK_PAYOUT_MULTIPLIER = 2.5
 # Stock market leverage multiplier
 STOCK_MARKET_LEVERAGE = 20
 
+# Hangman daily bonus for hard difficulty wins
+HANGMAN_DAILY_BONUS = 5_000
+
 # Hangman word lists for different difficulty levels
 HANGMAN_WORD_LISTS = {
     "easy": [

@@ -5,7 +5,7 @@ import aiofiles
 from datetime import datetime, timedelta
 from typing import Dict, Optional, Tuple, List
 
-from src.config.settings import DAILY_CLAIM, STOCK_MARKET_LEVERAGE
+from src.config.settings import DAILY_CLAIM, STOCK_MARKET_LEVERAGE, HANGMAN_DAILY_BONUS
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +57,7 @@ class CurrencyManager:
             self.currency_data[user_id] = {
                 "balance": 100000,
                 "last_daily_claim": None,
+                "last_hangman_bonus_claim": None,
                 "portfolio": {}  # Stock positions: {symbol: {shares, purchase_price, leverage, purchase_date}}
             }
             await self.save_currency_data()
@@ -65,6 +66,11 @@ class CurrencyManager:
         # Ensure portfolio exists for existing users
         if "portfolio" not in self.currency_data[user_id]:
             self.currency_data[user_id]["portfolio"] = {}
+            await self.save_currency_data()
+        
+        # Ensure hangman bonus claim tracking exists for existing users
+        if "last_hangman_bonus_claim" not in self.currency_data[user_id]:
+            self.currency_data[user_id]["last_hangman_bonus_claim"] = None
             await self.save_currency_data()
         
         return self.currency_data[user_id]
@@ -170,6 +176,57 @@ class CurrencyManager:
         
         logger.info(f"User {user_id} claimed daily bonus of ${DAILY_CLAIM}")
         return True, f"You claimed your daily bonus of ${DAILY_CLAIM:,}!", new_balance
+    
+    async def can_claim_hangman_bonus(self, user_id: str) -> Tuple[bool, Optional[str]]:
+        """
+        Check if user can claim hangman daily bonus.
+        Returns (can_claim, time_until_next_claim).
+        """
+        user_data = await self.get_user_data(user_id)
+        last_claim = user_data["last_hangman_bonus_claim"]
+        
+        if last_claim is None:
+            return True, None
+        
+        try:
+            last_claim_date = datetime.fromisoformat(last_claim)
+            now = datetime.now()
+            
+            # Check if 24 hours have passed
+            if now - last_claim_date >= timedelta(hours=24):
+                return True, None
+            else:
+                next_claim = last_claim_date + timedelta(hours=24)
+                time_left = next_claim - now
+                hours = int(time_left.total_seconds() // 3600)
+                minutes = int((time_left.total_seconds() % 3600) // 60)
+                return False, f"{hours}h {minutes}m"
+        
+        except Exception as e:
+            logger.error(f"Error parsing last hangman bonus claim date for user {user_id}: {e}")
+            return True, None
+    
+    async def claim_hangman_bonus(self, user_id: str) -> Tuple[bool, str, float]:
+        """
+        Claim hangman daily bonus for user.
+        Returns (success, message, new_balance).
+        """
+        can_claim, time_left = await self.can_claim_hangman_bonus(user_id)
+        
+        if not can_claim:
+            user_data = await self.get_user_data(user_id)
+            return False, f"You already claimed your hangman bonus today! Next claim in {time_left}.", user_data["balance"]
+        
+        # Give hangman bonus
+        new_balance = await self.add_currency(user_id, HANGMAN_DAILY_BONUS)
+        
+        # Update last claim time
+        user_data = await self.get_user_data(user_id)
+        user_data["last_hangman_bonus_claim"] = datetime.now().isoformat()
+        await self.save_currency_data()
+        
+        logger.info(f"User {user_id} claimed hangman bonus of ${HANGMAN_DAILY_BONUS}")
+        return True, f"🎯 Hangman Hard Mode Bonus: ${HANGMAN_DAILY_BONUS:,}!", new_balance
     
     def format_balance(self, balance: float) -> str:
         """Format balance with commas and dollar sign, limited to 2 decimal places"""

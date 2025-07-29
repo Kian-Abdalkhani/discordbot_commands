@@ -9,6 +9,7 @@ from discord import app_commands
 import logging
 
 from src.config.settings import GUILD_ID, HANGMAN_WORD_LISTS
+from src.utils.currency_manager import CurrencyManager
 
 logger = logging.getLogger(__name__)
 
@@ -25,10 +26,14 @@ class HangmanCog(commands.Cog):
         
         # Import word lists from settings
         self.word_lists = HANGMAN_WORD_LISTS
+        
+        # Initialize currency manager for daily bonuses
+        self.currency_manager = CurrencyManager()
     
     async def cog_load(self):
         """Called when the cog is loaded"""
         await self.load_hangman_stats()
+        await self.currency_manager.initialize()
 
     async def load_hangman_stats(self):
         """Load hangman stats from JSON file"""
@@ -50,7 +55,7 @@ class HangmanCog(commands.Cog):
             self.player_stats = {}
 
     async def save_hangman_stats(self):
-        """Save hangman stats to JSON file"""
+        """Save the hangman stats to a JSON file."""
         try:
             # Ensure the directory exists
             os.makedirs(os.path.dirname(self.stats_file), exist_ok=True)
@@ -165,7 +170,7 @@ class HangmanCog(commands.Cog):
             logger.info(f"Updated hangman stats for {interaction.user}: {self.player_stats[user_id]}")
             await self.save_hangman_stats()
 
-        # Function to display current game state
+        # Function to display the current game state
         def display_game_state():
             # Create the word display with guessed letters
             word_display = ""
@@ -275,7 +280,26 @@ class HangmanCog(commands.Cog):
                             inline=False
                         )
                         await update_player_stats("wins")
-                        await interaction.edit_original_response(embed=embed, content="**Game Over - You Won!**")
+                        
+                        # Check for daily bonus on hard difficulty
+                        bonus_message = ""
+                        if difficulty == "hard":
+                            try:
+                                success, message, new_balance = await self.currency_manager.claim_hangman_bonus(str(interaction.user.id))
+                                if success:
+                                    bonus_message = f"\n\n{message}"
+                                    embed.add_field(
+                                        name="💰 Daily Bonus Earned!",
+                                        value=message,
+                                        inline=False
+                                    )
+                                else:
+                                    # User already claimed bonus today, but still show they won
+                                    pass
+                            except Exception as e:
+                                logger.error(f"Error processing hangman bonus for user {interaction.user.id}: {e}")
+                        
+                        await interaction.edit_original_response(embed=embed, content=f"**Game Over - You Won!**{bonus_message}")
                         break
                     else:
                         # Continue game

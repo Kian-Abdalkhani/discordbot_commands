@@ -164,27 +164,30 @@ class BlackjackCog(commands.Cog):
             return " | ".join(f"{card[0]}{card[1]}" for card in hand)
 
         # Helper function to update player statistics and handle currency payouts
-        async def update_player_stats(result_type, is_blackjack=False):
+        async def update_player_stats(result_type, is_blackjack=False, actual_bet=None):
             user_id = str(interaction.user.id)
             if user_id not in self.player_stats:
                 self.player_stats[user_id] = {"wins": 0, "losses": 0, "ties": 0}
 
             self.player_stats[user_id][result_type] += 1
             
+            # Use actual_bet if provided, otherwise fall back to original bet
+            bet_amount = actual_bet if actual_bet is not None else bet
+            
             # Handle currency payouts
             payout = 0
             if result_type == "wins":
                 if is_blackjack:
                     # Blackjack pays 2.25x (bet + 1.5x bet)
-                    payout = int(bet * BLACKJACK_PAYOUT_MULTIPLIER)
+                    payout = int(bet_amount * BLACKJACK_PAYOUT_MULTIPLIER)
                 else:
                     # Regular win pays 2x (bet + bet)
-                    payout = bet * 2
+                    payout = bet_amount * 2
                 await self.currency_manager.add_currency(user_id, payout)
-                logger.info(f"Player {user_id} won ${payout} (bet: ${bet}, blackjack: {is_blackjack})")
+                logger.info(f"Player {user_id} won ${payout} (bet: ${bet_amount}, blackjack: {is_blackjack})")
             elif result_type == "ties":
                 # Return the original bet
-                payout = bet
+                payout = bet_amount
                 await self.currency_manager.add_currency(user_id, payout)
                 logger.info(f"Player {user_id} tied, returned ${payout}")
             # For losses, no payout (bet was already deducted)
@@ -297,12 +300,15 @@ class BlackjackCog(commands.Cog):
                     payout = 0
                     is_blackjack = False
                     
+                    # Use the actual bet amount (which includes doubled down amount)
+                    actual_bet_amount = split_bets[0]
+                    
                     if player_value > 21:
                         result = "💥 You busted! Dealer wins."
-                        payout = await update_player_stats("losses")
+                        payout = await update_player_stats("losses", actual_bet=actual_bet_amount)
                     elif dealer_value > 21:
                         result = "🎉 Dealer busted! You win!"
-                        payout = await update_player_stats("wins")
+                        payout = await update_player_stats("wins", actual_bet=actual_bet_amount)
                     elif player_value > dealer_value:
                         # Check if it's a blackjack (21 with 2 cards)
                         if player_value == 21 and len(player_hands[0]) == 2:
@@ -310,13 +316,13 @@ class BlackjackCog(commands.Cog):
                             is_blackjack = True
                         else:
                             result = "🎉 You win!"
-                        payout = await update_player_stats("wins", is_blackjack)
+                        payout = await update_player_stats("wins", is_blackjack, actual_bet=actual_bet_amount)
                     elif dealer_value > player_value:
                         result = "😔 Dealer wins."
-                        payout = await update_player_stats("losses")
+                        payout = await update_player_stats("losses", actual_bet=actual_bet_amount)
                     else:
                         result = "🤝 It's a tie!"
-                        payout = await update_player_stats("ties")
+                        payout = await update_player_stats("ties", actual_bet=actual_bet_amount)
 
                     embed.add_field(name="Result", value=result, inline=False)
                     
