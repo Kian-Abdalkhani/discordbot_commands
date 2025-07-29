@@ -251,7 +251,7 @@ class StockMarketCog(commands.Cog):
             # Calculate portfolio value (this will also trigger automatic liquidation if needed)
             total_value, total_profit_loss, position_details = await self.currency_manager.calculate_portfolio_value(user_id, current_prices)
             
-            # Check if any positions were liquidated and notify user
+            # Check if any positions were liquidated and notify users
             updated_portfolio = await self.currency_manager.get_portfolio(user_id)
             liquidated_symbols = []
             for symbol in symbols:
