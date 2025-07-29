@@ -128,6 +128,7 @@ class CurrencyCog(commands.Cog):
     @app_commands.command(name="leaderboard", description="Show the currency leaderboard")
     async def leaderboard(self, interaction: discord.Interaction):
         """Show currency leaderboard"""
+        await self.currency_manager.load_currency_data()
         # Get all users with currency data
         currency_data = self.currency_manager.currency_data
         

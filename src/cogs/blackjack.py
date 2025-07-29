@@ -165,6 +165,9 @@ class BlackjackCog(commands.Cog):
 
         # Helper function to update player statistics and handle currency payouts
         async def update_player_stats(result_type, is_blackjack=False, actual_bet=None):
+            # Reload currency data to ensure we have the latest state
+            await self.currency_manager.load_currency_data()
+            
             user_id = str(interaction.user.id)
             if user_id not in self.player_stats:
                 self.player_stats[user_id] = {"wins": 0, "losses": 0, "ties": 0}
@@ -276,6 +279,8 @@ class BlackjackCog(commands.Cog):
                         
                         # Add payout to user's balance
                         if hand_payout > 0:
+                            # Reload currency data before adding payout
+                            await self.currency_manager.load_currency_data()
                             await self.currency_manager.add_currency(user_id, hand_payout)
                     
                     # Update stats based on overall result
