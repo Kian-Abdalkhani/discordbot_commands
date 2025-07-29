@@ -161,16 +161,15 @@ class CurrencyManager:
             return False, f"You already claimed your daily bonus! Next claim in {time_left}.", user_data["balance"]
         
         # Give daily bonus
-        daily_amount = DAILY_CLAIM
-        new_balance = await self.add_currency(user_id, daily_amount)
+        new_balance = await self.add_currency(user_id, DAILY_CLAIM)
         
         # Update last claim time
         user_data = await self.get_user_data(user_id)
         user_data["last_daily_claim"] = datetime.now().isoformat()
         await self.save_currency_data()
         
-        logger.info(f"User {user_id} claimed daily bonus of ${daily_amount}")
-        return True, f"You claimed your daily bonus of ${daily_amount:,}!", new_balance
+        logger.info(f"User {user_id} claimed daily bonus of ${DAILY_CLAIM}")
+        return True, f"You claimed your daily bonus of ${DAILY_CLAIM:,}!", new_balance
     
     def format_balance(self, balance: float) -> str:
         """Format balance with commas and dollar sign, limited to 2 decimal places"""

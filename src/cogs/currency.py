@@ -2,10 +2,8 @@ import discord
 from discord.ext import commands, tasks
 from discord import app_commands
 import logging
-from datetime import datetime, timedelta
 
-from src.config.settings import GUILD_ID
-from src.utils.currency_manager import CurrencyManager
+from src.config.settings import GUILD_ID, DAILY_CLAIM
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +45,7 @@ class CurrencyCog(commands.Cog):
         await interaction.response.send_message(embed=embed)
         logger.info(f"{interaction.user} checked balance for {target_user}: {formatted_balance}")
     
-    @app_commands.command(name="daily", description="Claim your daily bonus of $5,000")
+    @app_commands.command(name="daily", description=f"Claim your daily bonus of ${DAILY_CLAIM:,.2f}")
     async def daily(self, interaction: discord.Interaction):
         """Claim daily bonus"""
         user_id = str(interaction.user.id)
