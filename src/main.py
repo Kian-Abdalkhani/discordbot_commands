@@ -12,6 +12,7 @@ from src.utils.logging import setup_logging
 from src.config.settings import GUILD_ID
 from src.utils.permission_store import PermissionManager
 from src.utils.currency_manager import CurrencyManager
+from src.utils.backup_manager import BackupManager
 
 load_dotenv()
 setup_logging()
@@ -35,6 +36,9 @@ class MyClient(commands.Bot):
         # set the permissions
         self.ps = PermissionManager()
 
+        # set backup manager
+        self.backup_manager = BackupManager()
+
         # override the self.tree.interaction_check method
         self.tree.interaction_check = self.interaction_check
 
@@ -44,6 +48,7 @@ class MyClient(commands.Bot):
         # Initialize async managers
         await self.ps.initialize()
         await self.currency_manager.initialize()
+        await self.backup_manager.initialize()
 
         # Automatically discover all cog modules in src/cogs/ folder
         cogs_dir = os.path.join(os.path.dirname(__file__), 'cogs')
