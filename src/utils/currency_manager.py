@@ -2,6 +2,7 @@ import json
 import os
 import logging
 import aiofiles
+import asyncio
 from datetime import datetime, timedelta
 from typing import Dict, Optional, Tuple, List
 
@@ -18,10 +19,19 @@ class CurrencyManager:
             "data", "currency.json"
         )
         self.currency_data = {}
+        self._locks = {}  # Per-user locks for atomic operations
+        self._global_lock = asyncio.Lock()  # Global lock for managing user locks
     
     async def initialize(self):
         """Initialize the currency manager by loading data"""
         await self.load_currency_data()
+    
+    async def _get_user_lock(self, user_id: str) -> asyncio.Lock:
+        """Get or create a lock for a specific user"""
+        async with self._global_lock:
+            if user_id not in self._locks:
+                self._locks[user_id] = asyncio.Lock()
+            return self._locks[user_id]
     
     async def load_currency_data(self):
         """Load currency data from JSON file"""
@@ -211,22 +221,25 @@ class CurrencyManager:
         Claim hangman daily bonus for user.
         Returns (success, message, new_balance).
         """
-        can_claim, time_left = await self.can_claim_hangman_bonus(user_id)
-        
-        if not can_claim:
+        # Use user-specific lock to prevent race conditions
+        user_lock = await self._get_user_lock(user_id)
+        async with user_lock:
+            can_claim, time_left = await self.can_claim_hangman_bonus(user_id)
+            
+            if not can_claim:
+                user_data = await self.get_user_data(user_id)
+                return False, f"You already claimed your hangman bonus today! Next claim in {time_left}.", user_data["balance"]
+            
+            # Give hangman bonus
+            new_balance = await self.add_currency(user_id, HANGMAN_DAILY_BONUS)
+            
+            # Update last claim time
             user_data = await self.get_user_data(user_id)
-            return False, f"You already claimed your hangman bonus today! Next claim in {time_left}.", user_data["balance"]
-        
-        # Give hangman bonus
-        new_balance = await self.add_currency(user_id, HANGMAN_DAILY_BONUS)
-        
-        # Update last claim time
-        user_data = await self.get_user_data(user_id)
-        user_data["last_hangman_bonus_claim"] = datetime.now().isoformat()
-        await self.save_currency_data()
-        
-        logger.info(f"User {user_id} claimed hangman bonus of ${HANGMAN_DAILY_BONUS}")
-        return True, f"🎯 Hangman Hard Mode Bonus: ${HANGMAN_DAILY_BONUS:,}!", new_balance
+            user_data["last_hangman_bonus_claim"] = datetime.now().isoformat()
+            await self.save_currency_data()
+            
+            logger.info(f"User {user_id} claimed hangman bonus of ${HANGMAN_DAILY_BONUS}")
+            return True, f"🎯 Hangman Hard Mode Bonus: ${HANGMAN_DAILY_BONUS:,}!", new_balance
     
     def format_balance(self, balance: float) -> str:
         """Format balance with commas and dollar sign, limited to 2 decimal places"""
