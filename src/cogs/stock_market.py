@@ -276,12 +276,19 @@ class StockMarketCog(commands.Cog):
             
             # Add portfolio summary
             cash_balance = await self.currency_manager.get_balance(user_id)
-            total_account_value = cash_balance + total_value
+            
+            # Calculate non-leveraged portfolio value (sum of original investments)
+            non_leveraged_portfolio_value = 0.0
+            for symbol, details in position_details.items():
+                non_leveraged_portfolio_value += details["original_investment"]
+            
+            # Total Account Value should be Portfolio Value + Cash Balance
+            total_account_value = cash_balance + non_leveraged_portfolio_value
             
             embed.add_field(
                 name="💰 Account Summary",
                 value=f"**Cash Balance:** ${cash_balance:,.2f}\n"
-                      f"**Portfolio Value:** ${total_value:,.2f}\n"
+                      f"**Portfolio Value:** ${non_leveraged_portfolio_value:,.2f}\n"
                       f"**Total Account Value:** ${total_account_value:,.2f}\n"
                       f"**Total P&L:** ${total_profit_loss:,.2f}",
                 inline=False
