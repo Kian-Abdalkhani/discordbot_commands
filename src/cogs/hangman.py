@@ -9,7 +9,6 @@ from discord import app_commands
 import logging
 
 from src.config.settings import GUILD_ID, HANGMAN_WORD_LISTS
-from src.utils.currency_manager import CurrencyManager
 
 logger = logging.getLogger(__name__)
 
@@ -27,13 +26,12 @@ class HangmanCog(commands.Cog):
         # Import word lists from settings
         self.word_lists = HANGMAN_WORD_LISTS
         
-        # Initialize currency manager for daily bonuses
-        self.currency_manager = CurrencyManager()
+        # Use shared currency manager for daily bonuses
+        self.currency_manager = bot.currency_manager
     
     async def cog_load(self):
         """Called when the cog is loaded"""
         await self.load_hangman_stats()
-        await self.currency_manager.initialize()
 
     async def load_hangman_stats(self):
         """Load hangman stats from JSON file"""
