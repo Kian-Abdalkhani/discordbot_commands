@@ -175,3 +175,145 @@ class TestClient:
 
         # Verify process_commands was not called (since we return early when mentioned)
         client_instance.process_commands.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_interaction_check_restricted_user(self, client_instance, mocker):
+        # Test interaction_check with a restricted user
+        interaction = mocker.MagicMock()
+        interaction.user.id = 12345
+        interaction.response.send_message = AsyncMock()
+        
+        # Mock the permission store to have this user as restricted
+        client_instance.ps = mocker.MagicMock()
+        client_instance.ps.restricted_members = [12345]
+        
+        # Call the interaction_check method
+        result = await client_instance.interaction_check(interaction)
+        
+        # Verify the user was denied access
+        assert result is False
+        interaction.response.send_message.assert_called_once_with("You are still in timeout")
+
+    @pytest.mark.asyncio
+    async def test_interaction_check_allowed_user(self, client_instance, mocker):
+        # Test interaction_check with an allowed user
+        interaction = mocker.MagicMock()
+        interaction.user.id = 12345
+        
+        # Mock the permission store to not have this user as restricted
+        client_instance.ps = mocker.MagicMock()
+        client_instance.ps.restricted_members = []
+        
+        # Call the interaction_check method
+        result = await client_instance.interaction_check(interaction)
+        
+        # Verify the user was allowed access
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_on_app_command_completion(self, client_instance, mocker):
+        # Test the on_app_command_completion static method
+        interaction = mocker.MagicMock()
+        interaction.user = mocker.MagicMock()
+        interaction.user.id = 12345
+        
+        command = mocker.MagicMock()
+        command.name = "test_command"
+        
+        with patch('src.main.logger') as mock_logger:
+            await MyClient.on_app_command_completion(interaction, command)
+            
+            # Verify the command usage was logged
+            mock_logger.info.assert_called_once()
+            call_args = mock_logger.info.call_args[0][0]
+            assert "used command:  /test_command" in call_args
+
+    @pytest.mark.asyncio
+    async def test_on_ready_cog_discovery(self, client_instance, mocker):
+        # Test the automatic cog discovery functionality
+        with patch('src.main.os.listdir') as mock_listdir, \
+             patch('src.main.os.path.join') as mock_join, \
+             patch('src.main.discord.Object') as mock_object, \
+             patch('src.main.GUILD_ID', 12345), \
+             patch('src.main.logger') as mock_logger:
+
+            # Mock the cogs directory listing
+            mock_listdir.return_value = [
+                '__init__.py', 'blackjack.py', 'games.py', 'quotes.py', 
+                'utilities.py', 'currency.py', 'permissions.py'
+            ]
+            mock_join.return_value = '/fake/path/cogs'
+            
+            mock_guild = MagicMock()
+            mock_object.return_value = mock_guild
+            
+            # Mock the sync result
+            client_instance.tree.sync.return_value = [MagicMock(), MagicMock()]
+            
+            # Call the on_ready method
+            await client_instance.on_ready()
+            
+            # Verify cog discovery was logged
+            mock_logger.info.assert_any_call(
+                "Discovered extensions: ['src.cogs.blackjack', 'src.cogs.games', 'src.cogs.quotes', 'src.cogs.utilities', 'src.cogs.currency', 'src.cogs.permissions']"
+            )
+            
+            # Verify extensions were loaded
+            expected_extensions = [
+                'src.cogs.blackjack', 'src.cogs.games', 'src.cogs.quotes', 
+                'src.cogs.utilities', 'src.cogs.currency', 'src.cogs.permissions'
+            ]
+            for extension in expected_extensions:
+                client_instance.load_extension.assert_any_call(extension)
+
+    @pytest.mark.asyncio
+    async def test_on_ready_extension_load_error(self, client_instance, mocker):
+        # Test handling of extension load errors
+        with patch('src.main.os.listdir') as mock_listdir, \
+             patch('src.main.os.path.join') as mock_join, \
+             patch('src.main.discord.Object') as mock_object, \
+             patch('src.main.GUILD_ID', 12345), \
+             patch('src.main.logger') as mock_logger:
+
+            mock_listdir.return_value = ['games.py']
+            mock_join.return_value = '/fake/path/cogs'
+            
+            mock_guild = MagicMock()
+            mock_object.return_value = mock_guild
+            
+            # Make load_extension raise an exception
+            client_instance.load_extension.side_effect = Exception("Load failed")
+            client_instance.tree.sync.return_value = []
+            
+            # Call the on_ready method
+            await client_instance.on_ready()
+            
+            # Verify error was logged
+            mock_logger.error.assert_any_call("Failed to load extension src.cogs.games: Load failed")
+
+    def test_main_function_no_token(self, mocker):
+        # Test main function when no bot token is provided
+        with patch('src.main.os.getenv', return_value=None), \
+             patch('src.main.logging.error') as mock_error, \
+             patch('src.main.sys.exit') as mock_exit:
+            
+            from src.main import main
+            main()
+            
+            # Verify error was logged and program exited
+            mock_error.assert_called_once_with("No bot token found in environment variables")
+            mock_exit.assert_called_once_with(1)
+
+    def test_main_function_with_token(self, mocker):
+        # Test main function with valid bot token
+        mock_client = mocker.MagicMock()
+        
+        with patch('src.main.os.getenv', return_value='fake_token'), \
+             patch('src.main.MyClient', return_value=mock_client) as mock_client_class:
+            
+            from src.main import main
+            main()
+            
+            # Verify client was created and run was called
+            mock_client_class.assert_called_once()
+            mock_client.run.assert_called_once_with('fake_token')

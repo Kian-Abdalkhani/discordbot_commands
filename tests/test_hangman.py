@@ -239,6 +239,113 @@ class TestHangmanCog:
         # Test initial stats structure
         assert isinstance(cog.player_stats, dict)
 
+    @patch('builtins.open')
+    @patch('os.path.exists')
+    def test_load_hangman_stats_empty_file(self, mock_exists, mock_open):
+        """Test loading stats from an empty file"""
+        from src.cogs.hangman import HangmanCog
+        
+        # Mock file exists but is empty
+        mock_exists.return_value = True
+        mock_file = MagicMock()
+        mock_file.read.return_value = ""
+        mock_open.return_value.__enter__.return_value = mock_file
+        
+        # Create a new cog instance to trigger load_hangman_stats
+        bot = MagicMock()
+        cog = HangmanCog(bot)
+        
+        # Verify empty stats were initialized
+        assert cog.player_stats == {}
+        mock_exists.assert_called_once()
+        mock_open.assert_called_once()
+
+    @patch('builtins.open')
+    @patch('os.path.exists')
+    def test_load_hangman_stats_missing_file(self, mock_exists, mock_open):
+        """Test loading stats when file doesn't exist"""
+        from src.cogs.hangman import HangmanCog
+        
+        # Mock file doesn't exist
+        mock_exists.return_value = False
+        
+        # Create a new cog instance to trigger load_hangman_stats
+        bot = MagicMock()
+        cog = HangmanCog(bot)
+        
+        # Verify empty stats were initialized
+        assert cog.player_stats == {}
+        mock_exists.assert_called_once()
+        mock_open.assert_not_called()
+
+    @patch('builtins.open')
+    @patch('os.path.exists')
+    def test_load_hangman_stats_valid_file(self, mock_exists, mock_open):
+        """Test loading stats from a valid file"""
+        from src.cogs.hangman import HangmanCog
+        
+        # Mock file exists with valid JSON
+        mock_exists.return_value = True
+        test_stats = {"12345": {"wins": 5, "losses": 3, "games_played": 8}}
+        mock_file = MagicMock()
+        mock_file.read.return_value = '{"12345": {"wins": 5, "losses": 3, "games_played": 8}}'
+        mock_open.return_value.__enter__.return_value = mock_file
+        
+        # Create a new cog instance to trigger load_hangman_stats
+        bot = MagicMock()
+        cog = HangmanCog(bot)
+        
+        # Verify stats were loaded correctly
+        assert cog.player_stats == test_stats
+        mock_exists.assert_called_once()
+        mock_open.assert_called_once()
+
+    @patch('builtins.open')
+    @patch('os.path.exists')
+    def test_load_hangman_stats_json_error(self, mock_exists, mock_open):
+        """Test loading stats when JSON is corrupted"""
+        from src.cogs.hangman import HangmanCog
+        
+        # Mock file exists but has invalid JSON
+        mock_exists.return_value = True
+        mock_file = MagicMock()
+        mock_file.read.return_value = "invalid json content"
+        mock_open.return_value.__enter__.return_value = mock_file
+        
+        # Create a new cog instance to trigger load_hangman_stats
+        bot = MagicMock()
+        cog = HangmanCog(bot)
+        
+        # Verify empty stats were initialized due to JSON error
+        assert cog.player_stats == {}
+        mock_exists.assert_called_once()
+        mock_open.assert_called_once()
+
+    @patch('builtins.open')
+    @patch('os.makedirs')
+    def test_save_hangman_stats_success(self, mock_makedirs, mock_open):
+        """Test saving stats successfully"""
+        from src.cogs.hangman import HangmanCog
+        
+        # Create cog with some stats
+        bot = MagicMock()
+        with patch('os.path.exists', return_value=False):
+            cog = HangmanCog(bot)
+        
+        cog.player_stats = {"12345": {"wins": 1, "losses": 0, "games_played": 1}}
+        
+        # Mock file operations
+        mock_file = MagicMock()
+        mock_open.return_value.__enter__.return_value = mock_file
+        
+        # Call save method
+        cog.save_hangman_stats()
+        
+        # Verify directory creation and file writing
+        mock_makedirs.assert_called_once()
+        mock_open.assert_called_once()
+        assert mock_file.write.called  # json.dump calls write multiple times
+
     @pytest.mark.asyncio
     async def test_hangman_game_timeout(self, cog, interaction, monkeypatch):
         """Test hangman game timeout behavior"""

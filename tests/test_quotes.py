@@ -69,6 +69,15 @@ class TestQuotesCog:
         interaction.created_at = datetime.now()
         return interaction
 
+    @pytest.fixture
+    def ctx(self):
+        ctx = MagicMock()
+        ctx.send = AsyncMock()
+        ctx.author = MagicMock(spec=discord.Member)
+        ctx.author.__str__ = lambda self: "Test User"
+        ctx.author.name = "testuser"
+        return ctx
+
     def test_load_quotes(self, cog):
         # Test that quotes are loaded correctly
         assert len(cog.quotes) == 2
@@ -117,36 +126,36 @@ class TestQuotesCog:
         assert "Test quote 1" in embed.description
 
     @pytest.mark.asyncio
-    async def test_quote_random(self, cog, ctx, monkeypatch):
+    async def test_quote_random(self, cog, interaction, monkeypatch):
         # Mock random.choice to return a predictable result
         monkeypatch.setattr("random.choice", lambda x: "1")
 
         # Test getting a random quote
-        await cog.quote(ctx)
+        await cog.quote(interaction)
 
-        # Verify ctx.send was called with an embed
-        assert ctx.send.called
-        embed = ctx.send.call_args[0][0]
+        # Verify interaction.response.send_message was called with an embed
+        assert interaction.response.send_message.called
+        embed = interaction.response.send_message.call_args[1]['embed']
         assert isinstance(embed, discord.Embed)
         assert embed.title == "Quote #1"
         assert "Test quote 1" in embed.description
 
     @pytest.mark.asyncio
-    async def test_quote_not_found(self, cog, ctx):
+    async def test_quote_not_found(self, cog, interaction):
         # Test getting a quote that doesn't exist
-        await cog.quote(ctx, quote_id="999")
+        await cog.quote(interaction, quote_id=999)
 
-        # Verify ctx.send was called with the not found message
-        ctx.send.assert_called_once_with("Quote #999 not found.")
+        # Verify interaction.response.send_message was called with the not found message
+        interaction.response.send_message.assert_called_once_with("Quote #999 not found.")
 
     @pytest.mark.asyncio
-    async def test_list_quotes(self, cog, ctx):
+    async def test_list_quotes(self, cog, interaction):
         # Test listing all quotes
-        await cog.list_quotes(ctx)
+        await cog.list_quotes(interaction)
 
-        # Verify ctx.send was called with an embed
-        assert ctx.send.called
-        embed = ctx.send.call_args[0][0]
+        # Verify interaction.response.send_message was called with an embed
+        assert interaction.response.send_message.called
+        embed = interaction.response.send_message.call_args[1]['embed']
         assert isinstance(embed, discord.Embed)
         assert embed.title == "Available Quotes"
 
@@ -156,13 +165,13 @@ class TestQuotesCog:
         assert "Quote #2" in field_names
 
     @pytest.mark.asyncio
-    async def test_quotes_by(self, cog, ctx):
+    async def test_quotes_by(self, cog, interaction):
         # Test getting quotes by a specific author
-        await cog.quotes_by(ctx, author="Test Author")
+        await cog.quotes_by(interaction, author="Test Author")
 
-        # Verify ctx.send was called with an embed
-        assert ctx.send.called
-        embed = ctx.send.call_args[0][0]
+        # Verify interaction.response.send_message was called with an embed
+        assert interaction.response.send_message.called
+        embed = interaction.response.send_message.call_args[1]['embed']
         assert isinstance(embed, discord.Embed)
         assert embed.title == "Quotes by Test Author"
 
@@ -172,31 +181,31 @@ class TestQuotesCog:
         assert "Quote #2" not in field_names
 
     @pytest.mark.asyncio
-    async def test_quotes_by_not_found(self, cog, ctx):
+    async def test_quotes_by_not_found(self, cog, interaction):
         # Test getting quotes by an author that doesn't exist
-        await cog.quotes_by(ctx, author="Nonexistent Author")
+        await cog.quotes_by(interaction, author="Nonexistent Author")
 
-        # Verify ctx.send was called with the not found message
-        ctx.send.assert_called_once_with("No quotes found by 'Nonexistent Author'.")
+        # Verify interaction.response.send_message was called with the not found message
+        interaction.response.send_message.assert_called_once_with("No quotes found by 'Nonexistent Author'.")
 
     @pytest.mark.asyncio
-    async def test_delete_quote(self, cog, ctx):
+    async def test_delete_quote(self, cog, interaction):
         # Test deleting a quote
-        await cog.delete_quote(ctx, quote_id="1")
+        await cog.delete_quote(interaction, quote_id="1")
 
         # Verify the quote was deleted
         assert "1" not in cog.quotes
 
-        # Verify ctx.send was called with the success message
-        ctx.send.assert_called_once_with("Quote #1 has been deleted.")
+        # Verify interaction.response.send_message was called with the success message
+        interaction.response.send_message.assert_called_once_with("Quote #1 has been deleted.")
 
     @pytest.mark.asyncio
-    async def test_delete_quote_not_found(self, cog, ctx):
+    async def test_delete_quote_not_found(self, cog, interaction):
         # Test deleting a quote that doesn't exist
-        await cog.delete_quote(ctx, quote_id="999")
+        await cog.delete_quote(interaction, quote_id="999")
 
-        # Verify ctx.send was called with the not found message
-        ctx.send.assert_called_once_with("Quote #999 not found.")
+        # Verify interaction.response.send_message was called with the not found message
+        interaction.response.send_message.assert_called_once_with("Quote #999 not found.")
 
     def test_save_quotes(self, cog, tmp_path):
         # Add a new quote

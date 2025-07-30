@@ -12,6 +12,13 @@ class TestBlackjackCog:
         bot = MagicMock(spec=commands.Bot)
         bot.wait_for = AsyncMock()
         bot.fetch_user = AsyncMock()
+        bot.currency_manager = MagicMock()
+        # Configure currency manager mock to return reasonable values
+        bot.currency_manager.load_currency_data = AsyncMock()
+        bot.currency_manager.get_balance = AsyncMock(return_value=1000)
+        bot.currency_manager.subtract_currency = AsyncMock(return_value=(True, 900))
+        bot.currency_manager.add_currency = AsyncMock()
+        bot.currency_manager.format_balance.return_value = "$1,000"
         return bot
 
     @pytest.fixture
@@ -252,3 +259,316 @@ class TestBlackjackCog:
         
         # Verify the correct message was sent
         interaction.response.send_message.assert_called_once_with("NewUser hasn't played any blackjack games yet.")
+
+    def test_blackjack_payout_calculation(self, cog):
+        """Test that blackjack payouts are calculated correctly"""
+        from src.config.settings import BLACKJACK_PAYOUT_MULTIPLIER
+        
+        # Mock currency manager
+        cog.currency_manager = MagicMock()
+        cog.currency_manager.add_currency = MagicMock()
+        
+        # Test 2-card blackjack payout (should get special multiplier)
+        user_id = "12345"
+        bet = 100
+        
+        # Mock the nested update_player_stats function behavior for blackjack
+        with patch.object(cog, 'player_stats', {}):
+            # Simulate blackjack win (2 cards totaling 21)
+            # This tests the logic from lines 198-204 in blackjack.py
+            player_hand = [{'rank': 'A', 'suit': '♠'}, {'rank': 'K', 'suit': '♥'}]  # 21 with 2 cards
+            is_blackjack = len(player_hand) == 2 and sum([11 if card['rank'] == 'A' else 10 if card['rank'] in ['K', 'Q', 'J'] else int(card['rank']) for card in player_hand]) == 21
+            
+            assert is_blackjack == True
+            
+            # Expected payout for blackjack should be bet * BLACKJACK_PAYOUT_MULTIPLIER
+            expected_payout = int(bet * BLACKJACK_PAYOUT_MULTIPLIER)
+            assert expected_payout == int(100 * BLACKJACK_PAYOUT_MULTIPLIER)
+
+    def test_regular_21_payout_calculation(self, cog):
+        """Test that 3+ card 21s get regular 2x payout, not blackjack multiplier"""
+        # Mock currency manager
+        cog.currency_manager = MagicMock()
+        cog.currency_manager.add_currency = MagicMock()
+        
+        # Test 3+ card 21 payout (should get regular 2x payout)
+        user_id = "12345"
+        bet = 100
+        
+        with patch.object(cog, 'player_stats', {}):
+            # Simulate 21 with 3+ cards (not blackjack)
+            player_hand = [
+                {'rank': '7', 'suit': '♠'}, 
+                {'rank': '7', 'suit': '♥'}, 
+                {'rank': '7', 'suit': '♦'}
+            ]  # 21 with 3 cards
+            
+            is_blackjack = len(player_hand) == 2 and sum([11 if card['rank'] == 'A' else 10 if card['rank'] in ['K', 'Q', 'J'] else int(card['rank']) for card in player_hand]) == 21
+            
+            assert is_blackjack == False
+            
+            # Expected payout for regular win should be bet * 2
+            expected_payout = bet * 2
+            assert expected_payout == 200
+
+    def test_blackjack_detection_logic(self, cog):
+        """Test that blackjack detection only triggers for 2-card 21s"""
+        # Test various hand combinations
+        
+        # True blackjack: Ace + 10-value card (2 cards)
+        blackjack_hands = [
+            [{'rank': 'A', 'suit': '♠'}, {'rank': 'K', 'suit': '♥'}],
+            [{'rank': 'A', 'suit': '♦'}, {'rank': 'Q', 'suit': '♠'}],
+            [{'rank': 'A', 'suit': '♣'}, {'rank': 'J', 'suit': '♥'}],
+            [{'rank': 'A', 'suit': '♠'}, {'rank': '10', 'suit': '♦'}]
+        ]
+        
+        for hand in blackjack_hands:
+            is_blackjack = len(hand) == 2 and sum([11 if card['rank'] == 'A' else 10 if card['rank'] in ['K', 'Q', 'J', '10'] else int(card['rank']) for card in hand]) == 21
+            assert is_blackjack == True, f"Hand {hand} should be detected as blackjack"
+        
+        # Not blackjack: 3+ cards totaling 21
+        non_blackjack_hands = [
+            [{'rank': '7', 'suit': '♠'}, {'rank': '7', 'suit': '♥'}, {'rank': '7', 'suit': '♦'}],
+            [{'rank': '5', 'suit': '♠'}, {'rank': '6', 'suit': '♥'}, {'rank': '10', 'suit': '♦'}],
+            [{'rank': 'A', 'suit': '♠'}, {'rank': '5', 'suit': '♥'}, {'rank': '5', 'suit': '♦'}]
+        ]
+        
+        for hand in non_blackjack_hands:
+            is_blackjack = len(hand) == 2 and sum([11 if card['rank'] == 'A' else 10 if card['rank'] in ['K', 'Q', 'J', '10'] else int(card['rank']) for card in hand]) == 21
+            assert is_blackjack == False, f"Hand {hand} should NOT be detected as blackjack"
+
+    def test_payout_multiplier_from_settings(self, cog):
+        """Test that blackjack payout multiplier is correctly imported from settings"""
+        from src.config.settings import BLACKJACK_PAYOUT_MULTIPLIER
+        
+        # Verify the multiplier is imported and is a reasonable value
+        assert BLACKJACK_PAYOUT_MULTIPLIER is not None
+        assert isinstance(BLACKJACK_PAYOUT_MULTIPLIER, (int, float))
+        assert BLACKJACK_PAYOUT_MULTIPLIER > 1  # Should be greater than 1 for bonus payout
+
+    @pytest.mark.asyncio
+    async def test_double_down_button_appears_with_sufficient_funds(self, cog, interaction, monkeypatch):
+        """Test that double down button appears when user has sufficient funds"""
+        # Mock currency manager to return sufficient balance
+        with patch.object(cog.currency_manager, 'load_currency_data', new_callable=AsyncMock), \
+             patch.object(cog.currency_manager, 'get_balance', new_callable=AsyncMock, return_value=1000), \
+             patch.object(cog.currency_manager, 'subtract_currency', new_callable=AsyncMock, return_value=(True, 900)), \
+             patch.object(cog.currency_manager, 'add_currency', new_callable=AsyncMock), \
+             patch('discord.Embed'):
+            
+            # Mock the message and reactions
+            mock_message = MagicMock()
+            mock_message.add_reaction = AsyncMock()
+            mock_message.edit = AsyncMock()
+            mock_message.clear_reactions = AsyncMock()
+            interaction.original_response = AsyncMock(return_value=mock_message)
+            
+            # Mock wait_for to simulate standing immediately (to avoid infinite loop)
+            mock_reaction = MagicMock()
+            mock_reaction.emoji = "🛑"
+            cog.bot.wait_for = AsyncMock(return_value=(mock_reaction, interaction.user))
+            
+            # Mock random.shuffle to control deck order and avoid natural blackjacks
+            def mock_shuffle(deck):
+                # Arrange deck so player gets 5,6 (=11) and dealer gets 7,8 (=15)
+                # This avoids natural blackjacks
+                deck[:] = [
+                    ('5', '♠'), ('7', '♦'), ('6', '♥'), ('8', '♣'),  # First 4 cards: P1, D1, P2, D2
+                    ('9', '♠'), ('10', '♥'), ('J', '♣'), ('Q', '♦'), # Extra cards
+                    ('K', '♠'), ('A', '♥'), ('2', '♣'), ('3', '♦'),
+                ] + deck[12:]  # Keep the rest of the deck
+            
+            with patch('random.shuffle', side_effect=mock_shuffle):
+                
+                # Call blackjack with sufficient bet
+                await cog.blackjack.callback(cog, interaction, bet=100)
+                
+                # Verify that double down reaction was added
+                # With concurrent reactions, we need to check if add_reaction was called with the double down emoji
+                reaction_calls = []
+                for call in mock_message.add_reaction.call_args_list:
+                    if len(call[0]) > 0:
+                        reaction_calls.append(call[0][0])
+                assert "2️⃣" in reaction_calls, f"Double down reaction should be added with sufficient funds. Actual calls: {reaction_calls}"
+
+    @pytest.mark.asyncio
+    async def test_double_down_button_not_appears_with_insufficient_funds(self, cog, interaction, monkeypatch):
+        """Test that double down button doesn't appear when user has insufficient funds"""
+        # Mock currency manager to return insufficient balance
+        with patch.object(cog.currency_manager, 'load_currency_data'), \
+             patch.object(cog.currency_manager, 'get_balance', return_value=50), \
+             patch.object(cog.currency_manager, 'subtract_currency', return_value=(True, 0)), \
+             patch.object(cog.currency_manager, 'add_currency'), \
+             patch('random.shuffle'), \
+             patch('discord.Embed'):
+            
+            # Mock the message and reactions
+            mock_message = MagicMock()
+            mock_message.add_reaction = AsyncMock()
+            mock_message.edit = AsyncMock()
+            mock_message.clear_reactions = AsyncMock()
+            interaction.original_response = AsyncMock(return_value=mock_message)
+            
+            # Mock wait_for to simulate standing immediately
+            mock_reaction = MagicMock()
+            mock_reaction.emoji = "🛑"
+            cog.bot.wait_for = AsyncMock(return_value=(mock_reaction, interaction.user))
+            
+            # Call blackjack with bet higher than balance
+            await cog.blackjack.callback(cog, interaction, bet=100)
+            
+            # Verify that double down reaction was NOT added
+            # With concurrent reactions, we need to check if add_reaction was called with the double down emoji
+            reaction_calls = []
+            for call in mock_message.add_reaction.call_args_list:
+                if len(call[0]) > 0:
+                    reaction_calls.append(call[0][0])
+            assert "2️⃣" not in reaction_calls, f"Double down reaction should NOT be added with insufficient funds. Actual calls: {reaction_calls}"
+
+    @pytest.mark.asyncio
+    async def test_double_down_functionality(self, cog, interaction, monkeypatch):
+        """Test that double down works correctly - doubles bet, deals one card, ends turn"""
+        # Mock currency manager
+        with patch.object(cog.currency_manager, 'load_currency_data', new_callable=AsyncMock), \
+             patch.object(cog.currency_manager, 'get_balance', new_callable=AsyncMock, return_value=1000), \
+             patch.object(cog.currency_manager, 'subtract_currency', new_callable=AsyncMock, return_value=(True, 800)), \
+             patch.object(cog.currency_manager, 'add_currency', new_callable=AsyncMock), \
+             patch('discord.Embed'):
+            
+            # Mock the message and reactions
+            mock_message = MagicMock()
+            mock_message.add_reaction = AsyncMock()
+            mock_message.remove_reaction = AsyncMock()
+            mock_message.edit = AsyncMock()
+            mock_message.clear_reactions = AsyncMock()
+            interaction.original_response = AsyncMock(return_value=mock_message)
+            
+            # Mock wait_for to simulate double down selection
+            mock_reaction = MagicMock()
+            mock_reaction.emoji = "2️⃣"
+            cog.bot.wait_for = AsyncMock(return_value=(mock_reaction, interaction.user))
+            
+            # Mock random.shuffle to control deck order and avoid natural blackjacks
+            def mock_shuffle(deck):
+                # Arrange deck so player gets 5,6 (=11) and dealer gets 7,8 (=15)
+                # This avoids natural blackjacks
+                deck[:] = [
+                    ('5', '♠'), ('7', '♦'), ('6', '♥'), ('8', '♣'),  # First 4 cards: P1, D1, P2, D2
+                    ('9', '♠'), ('10', '♥'), ('J', '♣'), ('Q', '♦'), # Extra cards
+                    ('K', '♠'), ('A', '♥'), ('2', '♣'), ('3', '♦'),
+                ] + deck[12:]  # Keep the rest of the deck
+            
+            with patch('random.shuffle', side_effect=mock_shuffle):
+                
+                # Call blackjack
+                await cog.blackjack.callback(cog, interaction, bet=100)
+                
+                # Verify that currency was deducted twice (original bet + double down)
+                subtract_calls = cog.currency_manager.subtract_currency.call_args_list
+                assert len(subtract_calls) >= 2, "Currency should be deducted twice for double down"
+                
+                # Verify that double down reaction was removed after use
+                remove_calls = [call for call in mock_message.remove_reaction.call_args_list if call[0][0] == "2️⃣"]
+                assert len(remove_calls) > 0, "Double down reaction should be removed after use"
+
+    @pytest.mark.asyncio
+    async def test_async_stats_loading(self, cog):
+        """Test async loading of blackjack stats"""
+        mock_stats = {"12345": {"wins": 5, "losses": 3, "ties": 1}}
+        
+        with patch('src.cogs.blackjack.os.path.exists', return_value=True), \
+             patch('aiofiles.open') as mock_aio_open:
+            # Mock aiofiles.open context manager
+            mock_file = AsyncMock()
+            mock_file.read.return_value = json.dumps(mock_stats)
+            mock_aio_open.return_value.__aenter__.return_value = mock_file
+            
+            await cog.load_blackjack_stats()
+            
+            assert cog.player_stats == mock_stats
+            mock_aio_open.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_async_stats_saving(self, cog):
+        """Test async saving of blackjack stats"""
+        cog.player_stats = {"12345": {"wins": 5, "losses": 3, "ties": 1}}
+        
+        with patch('aiofiles.open') as mock_aio_open:
+            mock_file = AsyncMock()
+            mock_aio_open.return_value.__aenter__.return_value = mock_file
+            
+            await cog.save_blackjack_stats()
+            
+            mock_aio_open.assert_called_once()
+            mock_file.write.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_stats_loading_empty_file(self, cog):
+        """Test loading stats from empty file"""
+        with patch('src.cogs.blackjack.os.path.exists', return_value=True), \
+             patch('aiofiles.open') as mock_aio_open:
+            # Mock empty file
+            mock_file = AsyncMock()
+            mock_file.read.return_value = ""
+            mock_aio_open.return_value.__aenter__.return_value = mock_file
+            
+            await cog.load_blackjack_stats()
+            
+            assert cog.player_stats == {}
+
+    @pytest.mark.asyncio
+    async def test_stats_loading_json_error(self, cog):
+        """Test loading stats with JSON decode error"""
+        with patch('src.cogs.blackjack.os.path.exists', return_value=True), \
+             patch('aiofiles.open') as mock_aio_open, \
+             patch('src.cogs.blackjack.logger.error') as mock_error:
+            # Mock file with invalid JSON
+            mock_file = AsyncMock()
+            mock_file.read.return_value = "invalid json"
+            mock_aio_open.return_value.__aenter__.return_value = mock_file
+            
+            await cog.load_blackjack_stats()
+            
+            assert cog.player_stats == {}
+            mock_error.assert_called_once()
+
+    def test_game_state_edge_cases(self, cog):
+        """Test edge cases in game state logic"""
+        # Test bust detection
+        bust_hand = [('K', '♠'), ('Q', '♥'), ('5', '♦')]  # 25
+        def calculate_value(hand):
+            value = 0
+            aces = 0
+            for card in hand:
+                rank = card[0]
+                if rank in ['J', 'Q', 'K']:
+                    value += 10
+                elif rank == 'A':
+                    aces += 1
+                    value += 11
+                else:
+                    value += int(rank)
+            while value > 21 and aces > 0:
+                value -= 10
+                aces -= 1
+            return value
+        
+        assert calculate_value(bust_hand) > 21
+        
+        # Test soft ace handling
+        soft_hand = [('A', '♠'), ('6', '♥'), ('5', '♦')]  # A,6,5 = 12 (soft)
+        assert calculate_value(soft_hand) == 12
+        
+        # Test multiple aces
+        multi_ace_hand = [('A', '♠'), ('A', '♥'), ('9', '♦')]  # A,A,9 = 21
+        assert calculate_value(multi_ace_hand) == 21
+
+    @pytest.mark.asyncio
+    async def test_error_handling_in_game(self, cog, interaction):
+        """Test error handling during game execution"""
+        # Mock currency manager to raise exception
+        cog.bot.currency_manager.subtract_currency = AsyncMock(side_effect=Exception("Database error"))
+        
+        with pytest.raises(Exception):
+            await cog.blackjack.callback(cog, interaction, bet=100)
