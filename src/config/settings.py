@@ -16,7 +16,7 @@ BLACKJACK_PAYOUT_MULTIPLIER = 2.5
 STOCK_MARKET_LEVERAGE = 20
 
 # Hangman daily bonus for hard difficulty wins
-HANGMAN_DAILY_BONUS = 5_000
+HANGMAN_DAILY_BONUS = 10_000
 
 # Hangman word lists for different difficulty levels
 HANGMAN_WORD_LISTS = {
@@ -59,3 +59,26 @@ HANGMAN_WORD_LISTS = {
         "location", "material", "national", "original", "platform", "question", "relative"
     ]
 }
+
+# Horse Racing Configuration
+HORSE_RACE_MIN_BET = 100
+HORSE_RACE_MAX_BET = 50_000
+HORSE_RACE_HOUSE_EDGE = 0.01  # 1% house edge on odds
+HORSE_RACE_DURATION = 20  # Race animation duration in seconds
+HORSE_RACE_UPDATE_INTERVAL = 2  # Update race progress every 2 seconds
+HORSE_RACE_TRACK_LENGTH = 100  # Track length in meters
+HORSE_RACE_DAY = 5  # Saturday (0=Monday, 6=Sunday)
+HORSE_RACE_HOUR = 20  # 8 PM
+HORSE_RACE_MINUTE = 0
+
+# Horse Stats Configuration
+HORSE_STATS = [
+    {"name": "Lightning Bolt", "speed": 85, "stamina": 78, "acceleration": 92, "color": "⚡"},
+    {"name": "Thunder Strike", "speed": 88, "stamina": 82, "acceleration": 85, "color": "🌩️"},
+    {"name": "Midnight Runner", "speed": 80, "stamina": 95, "acceleration": 75, "color": "🌙"},
+    {"name": "Fire Storm", "speed": 90, "stamina": 70, "acceleration": 88, "color": "🔥"},
+    {"name": "Wind Walker", "speed": 82, "stamina": 88, "acceleration": 80, "color": "💨"},
+    {"name": "Star Chaser", "speed": 87, "stamina": 85, "acceleration": 78, "color": "⭐"},
+    {"name": "Golden Arrow", "speed": 83, "stamina": 90, "acceleration": 82, "color": "🏹"},
+    {"name": "Shadow Dash", "speed": 86, "stamina": 75, "acceleration": 90, "color": "👤"}
+]
