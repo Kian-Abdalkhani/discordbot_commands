@@ -62,23 +62,43 @@ HANGMAN_WORD_LISTS = {
 
 # Horse Racing Configuration
 HORSE_RACE_MIN_BET = 100
-HORSE_RACE_MAX_BET = 50_000
-HORSE_RACE_HOUSE_EDGE = 0.01  # 1% house edge on odds
-HORSE_RACE_DURATION = 20  # Race animation duration in seconds
-HORSE_RACE_UPDATE_INTERVAL = 2  # Update race progress every 2 seconds
-HORSE_RACE_TRACK_LENGTH = 100  # Track length in meters
-HORSE_RACE_DAY = 5  # Saturday (0=Monday, 6=Sunday)
-HORSE_RACE_HOUR = 20  # 8 PM
-HORSE_RACE_MINUTE = 0
+HORSE_RACE_MAX_BET = 1_000_000
+HORSE_RACE_HOUSE_EDGE = 0.05  # 1% house edge on odds
+HORSE_RACE_DURATION = 90  # Race animation duration in seconds (1.5 minutes)
+HORSE_RACE_UPDATE_INTERVAL = 1.5  # Update race progress every 1.5 seconds for smoother animation
+HORSE_RACE_TRACK_LENGTH = 1200  # Track length in meters
+HORSE_RANDOM_VARIATION = 15 # The randomness factor; the higher, the more random race outputs are
 
-# Horse Stats Configuration
+# Admin Controls
+# Set to False to disable admin manual race starts (races will only run on schedule)
+# Set to True to allow admins to use /horserace_start command to manually trigger races
+HORSE_RACE_ALLOW_ADMIN_START = True
+
+# Set horse race channel id
+HORSE_RACE_CHANNEL_ID = os.getenv("HORSE_RACE_CHANNEL_ID")
+
+# Additional scheduled times (optional - can add more race times)
+HORSE_RACE_SCHEDULE = [
+    {"day": 1, "hour": 20, "minute": 0},  # Tuesday 8 PM
+    {"day": 3, "hour": 20, "minute": 0},  # Thursday 8 PM
+    {"day": 5, "hour": 20, "minute": 0},  # Saturday 8 PM
+]
+
+# Horse Stats Configuration - 8 racing horses with varied stats (favorites to longshots)
 HORSE_STATS = [
-    {"name": "Lightning Bolt", "speed": 85, "stamina": 78, "acceleration": 92, "color": "⚡"},
-    {"name": "Thunder Strike", "speed": 88, "stamina": 82, "acceleration": 85, "color": "🌩️"},
-    {"name": "Midnight Runner", "speed": 80, "stamina": 95, "acceleration": 75, "color": "🌙"},
-    {"name": "Fire Storm", "speed": 90, "stamina": 70, "acceleration": 88, "color": "🔥"},
-    {"name": "Wind Walker", "speed": 82, "stamina": 88, "acceleration": 80, "color": "💨"},
-    {"name": "Star Chaser", "speed": 87, "stamina": 85, "acceleration": 78, "color": "⭐"},
-    {"name": "Golden Arrow", "speed": 83, "stamina": 90, "acceleration": 82, "color": "🏹"},
-    {"name": "Shadow Dash", "speed": 86, "stamina": 75, "acceleration": 90, "color": "👤"}
+    # Strong favorites (low odds, high stats)
+    {"name": "Lightning Bolt", "speed": 95, "stamina": 90, "acceleration": 92, "color": "⚡"},
+    {"name": "Thunder Strike", "speed": 92, "stamina": 88, "acceleration": 90, "color": "🌩️"},
+    
+    # Good contenders (medium odds)
+    {"name": "Fire Storm", "speed": 88, "stamina": 85, "acceleration": 87, "color": "🔥"},
+    {"name": "Star Chaser", "speed": 86, "stamina": 87, "acceleration": 85, "color": "⭐"},
+    
+    # Dark horses (medium-low odds)
+    {"name": "Wind Walker", "speed": 82, "stamina": 84, "acceleration": 80, "color": "💨"},
+    {"name": "Midnight Runner", "speed": 80, "stamina": 86, "acceleration": 78, "color": "🌙"},
+    
+    # Longshots (high odds, lower stats)
+    {"name": "Golden Arrow", "speed": 75, "stamina": 78, "acceleration": 72, "color": "🏹"},
+    {"name": "Shadow Dash", "speed": 72, "stamina": 74, "acceleration": 70, "color": "👤"}
 ]
