@@ -92,6 +92,7 @@ class CurrencyManager:
     
     async def add_currency(self, user_id: str, amount: int) -> float:
         """Add currency to user's balance. Returns new balance."""
+        await self.load_currency_data()
         user_data = await self.get_user_data(user_id)
         user_data["balance"] += amount
         await self.save_currency_data()
