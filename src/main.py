@@ -6,7 +6,6 @@ from dotenv import load_dotenv
 
 import discord
 from discord.ext import commands
-from discord import app_commands
 
 from src.utils.logging import setup_logging
 from src.config.settings import GUILD_ID
@@ -34,7 +33,7 @@ class MyClient(commands.Bot):
         self.currency_manager = CurrencyManager()
 
         # set the permissions
-        self.ps = PermissionManager()
+        self.pm = PermissionManager()
 
         # set backup manager
         self.backup_manager = BackupManager()
@@ -46,7 +45,7 @@ class MyClient(commands.Bot):
         logger.info(f"{self.user} ready for commands")
 
         # Initialize async managers
-        await self.ps.initialize()
+        await self.pm.initialize()
         await self.currency_manager.initialize()
         await self.backup_manager.initialize()
 
@@ -82,8 +81,8 @@ class MyClient(commands.Bot):
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         """Global interaction check to ensure only authorized users can use the bot"""
-        logger.info(f"{interaction.user} ({interaction.user.id}) tried to use a command")
-        if interaction.user.id in self.ps.restricted_members:
+        if await self.pm.is_user_restricted(interaction.user.id):
+            logger.info(f"{interaction.user} ({interaction.user.id}) tried to use a command while in timeout")
             await interaction.response.send_message("You are still in timeout")
             return False
         else:

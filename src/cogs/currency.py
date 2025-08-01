@@ -17,8 +17,8 @@ class CurrencyCog(commands.Cog):
         self.currency_manager = bot.currency_manager
         logger.info("Currency system initialized")
         
-        # Start the daily currency distribution task
-        self.daily_distribution_task.start()
+        # # Start the daily currency distribution task
+        # self.daily_distribution_task.start()
     
     @app_commands.command(name="balance", description="Check your current balance")
     async def balance(self, interaction: discord.Interaction, user: discord.Member = None):
@@ -268,44 +268,44 @@ class CurrencyCog(commands.Cog):
         await interaction.response.send_message(embed=embed, ephemeral=True)
         logger.info(f"{interaction.user} ran user lookup diagnostic")
     
-    @tasks.loop(hours=1)
-    async def daily_distribution_task(self):
-        """Background task to automatically distribute daily bonuses"""
-        try:
-            # Get all users who have currency data
-            currency_data = self.currency_manager.currency_data
-            eligible_users = []
-            
-            for user_id, data in currency_data.items():
-                can_claim, _ = await self.currency_manager.can_claim_daily(user_id)
-                if can_claim:
-                    eligible_users.append(user_id)
-            
-            if eligible_users:
-                logger.info(f"Auto-distributing daily bonuses to {len(eligible_users)} eligible users")
-                
-                for user_id in eligible_users:
-                    success, message, new_balance = await self.currency_manager.claim_daily_bonus(user_id)
-                    if success:
-                        logger.info(f"Auto-distributed daily bonus to user {user_id}: {message}")
-                
-                logger.info(f"Completed auto-distribution of daily bonuses")
-            else:
-                logger.debug("No users eligible for daily bonus auto-distribution")
-                
-        except Exception as e:
-            logger.error(f"Error in daily distribution task: {e}")
-    
-    @daily_distribution_task.before_loop
-    async def before_daily_distribution_task(self):
-        """Wait until the bot is ready before starting the task"""
-        await self.bot.wait_until_ready()
-        logger.info("Daily currency distribution task started")
-    
-    def cog_unload(self):
-        """Clean up when the cog is unloaded"""
-        self.daily_distribution_task.cancel()
-        logger.info("Daily currency distribution task stopped")
+    # @tasks.loop(hours=1)
+    # async def daily_distribution_task(self):
+    #     """Background task to automatically distribute daily bonuses"""
+    #     try:
+    #         # Get all users who have currency data
+    #         currency_data = self.currency_manager.currency_data
+    #         eligible_users = []
+    #
+    #         for user_id, data in currency_data.items():
+    #             can_claim, _ = await self.currency_manager.can_claim_daily(user_id)
+    #             if can_claim:
+    #                 eligible_users.append(user_id)
+    #
+    #         if eligible_users:
+    #             logger.info(f"Auto-distributing daily bonuses to {len(eligible_users)} eligible users")
+    #
+    #             for user_id in eligible_users:
+    #                 success, message, new_balance = await self.currency_manager.claim_daily_bonus(user_id)
+    #                 if success:
+    #                     logger.info(f"Auto-distributed daily bonus to user {user_id}: {message}")
+    #
+    #             logger.info(f"Completed auto-distribution of daily bonuses")
+    #         else:
+    #             logger.debug("No users eligible for daily bonus auto-distribution")
+    #
+    #     except Exception as e:
+    #         logger.error(f"Error in daily distribution task: {e}")
+    #
+    # @daily_distribution_task.before_loop
+    # async def before_daily_distribution_task(self):
+    #     """Wait until the bot is ready before starting the task"""
+    #     await self.bot.wait_until_ready()
+    #     logger.info("Daily currency distribution task started")
+    #
+    # def cog_unload(self):
+    #     """Clean up when the cog is unloaded"""
+    #     self.daily_distribution_task.cancel()
+    #     logger.info("Daily currency distribution task stopped")
 
 async def setup(bot):
     guild_id = discord.Object(id=GUILD_ID)
