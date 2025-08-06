@@ -77,7 +77,10 @@ HORSE_RACE_ALLOW_ADMIN_START = True
 # Set horse race channel id
 HORSE_RACE_CHANNEL_ID = os.getenv("HORSE_RACE_CHANNEL_ID")
 
-# Additional scheduled times (optional - can add more race times)
+# Horse race schedule configuration
+# IMPORTANT: All times are in the system's local timezone. For Docker deployments,
+# ensure the TZ environment variable is set in docker-compose.yml to match your local timezone.
+# Days: Monday=0, Tuesday=1, Wednesday=2, Thursday=3, Friday=4, Saturday=5, Sunday=6
 HORSE_RACE_SCHEDULE = [
     {"day": 1, "hour": 20, "minute": 0},  # Tuesday 8 PM
     {"day": 3, "hour": 20, "minute": 0},  # Thursday 8 PM
