@@ -90,15 +90,20 @@ class HorseRaceManager:
     async def initialize(self):
         """Initialize the horse race manager"""
         await self.load_race_data()
+        await self.load_current_bets()
         
     async def load_race_data(self):
         """Load race data from JSON file"""
         try:
-            if os.path.exists(self.data_file):
+            if os.path.exists(self.data_file) and os.path.getsize(self.data_file) > 0:
                 async with aiofiles.open(self.data_file, 'r') as f:
                     content = await f.read()
-                    self.race_data = json.loads(content)
-                logger.info(f"Loaded race data from {self.data_file}")
+                    if content.strip():  # Check if file has content
+                        self.race_data = json.loads(content)
+                        logger.info(f"Loaded race data from {self.data_file}")
+                    else:
+                        logger.info(f"Race file is empty, starting with default data")
+                        self.race_data = {"races": [], "total_races": 0}
             else:
                 logger.info(f"No race file found at {self.data_file}, starting with empty data")
                 self.race_data = {"races": [], "total_races": 0}
@@ -108,6 +113,7 @@ class HorseRaceManager:
             
     async def save_race_data(self):
         """Save race data to JSON file"""
+        await self.load_race_data()
         try:
             os.makedirs(os.path.dirname(self.data_file), exist_ok=True)
             async with aiofiles.open(self.data_file, 'w') as f:
@@ -115,6 +121,37 @@ class HorseRaceManager:
             logger.info(f"Saved race data to {self.data_file}")
         except Exception as e:
             logger.error(f"Error saving race data: {e}")
+            
+    async def save_current_bets(self):
+        """Save current bets to JSON file asynchronously"""
+        try:
+            # Ensure race_data has current_bets section
+            if not hasattr(self, 'current_bets'):
+                self.current_bets = {}
+                
+            # Update race_data with current bets
+            self.race_data["current_bets"] = self.current_bets
+            
+            # Save to file asynchronously
+            os.makedirs(os.path.dirname(self.data_file), exist_ok=True)
+            async with aiofiles.open(self.data_file, 'w') as f:
+                await f.write(json.dumps(self.race_data, indent=2, default=str))
+            logger.debug(f"Saved current bets to {self.data_file}")
+        except Exception as e:
+            logger.error(f"Error saving current bets: {e}")
+            
+    async def load_current_bets(self):
+        """Load current bets from JSON file"""
+        try:
+            if "current_bets" in self.race_data:
+                self.current_bets = self.race_data["current_bets"]
+                logger.info(f"Loaded {len(self.current_bets)} users with active bets")
+            else:
+                self.current_bets = {}
+                logger.info("No current bets found in file")
+        except Exception as e:
+            logger.error(f"Error loading current bets: {e}")
+            self.current_bets = {}
             
     def get_next_race_time(self) -> datetime:
         """Calculate the next scheduled race time from HORSE_RACE_SCHEDULE"""
@@ -222,6 +259,7 @@ class HorseRaceManager:
         
     async def place_bet(self, user_id: str, horse_id: int, amount: int) -> Tuple[bool, str]:
         """Place a bet on a horse"""
+        await self.load_current_bets()
         if not self.is_betting_time():
             return False, "Betting is not currently open!"
             
@@ -248,17 +286,22 @@ class HorseRaceManager:
             "timestamp": datetime.now()
         })
         
+        # Save bets to file immediately (asynchronously)
+        await self.save_current_bets()
+        
         horse_name = HORSE_STATS[horse_id - 1]["name"]
         return True, f"Bet placed: ${amount:,.2f} on {horse_name}!"
         
     async def get_user_bets(self, user_id: str) -> List[Dict]:
         """Get all bets for a user"""
+        await self.load_current_bets()
         if not hasattr(self, 'current_bets') or user_id not in self.current_bets:
             return []
         return self.current_bets[user_id]
         
     async def get_all_bets(self) -> Dict[str, List[Dict]]:
         """Get all current bets from all users"""
+        await self.load_current_bets()
         if not hasattr(self, 'current_bets'):
             return {}
         return self.current_bets
@@ -437,6 +480,8 @@ class HorseRaceManager:
             self.betting_open = False
             if hasattr(self, 'current_bets'):
                 self.current_bets = {}
+                # Clear saved bets from file
+                await self.save_current_bets()
                 
     def create_race_embed(self, horses: List[Horse], time_elapsed: float) -> discord.Embed:
         """Create Discord embed showing race progress with improved visualization"""
