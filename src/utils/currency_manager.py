@@ -3,7 +3,7 @@ import os
 import logging
 import aiofiles
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from typing import Dict, Optional, Tuple, List
 
 from src.config.settings import DAILY_CLAIM, STOCK_MARKET_LEVERAGE, HANGMAN_DAILY_BONUS
@@ -140,7 +140,7 @@ class CurrencyManager:
     async def can_claim_daily(self, user_id: str) -> Tuple[bool, Optional[str]]:
         """
         Check if user can claim daily bonus.
-        Returns (can_claim, time_until_next_claim).
+        Returns (can_claim, message_if_cannot_claim).
         """
         user_data = await self.get_user_data(user_id)
         last_claim = user_data["last_daily_claim"]
@@ -149,18 +149,19 @@ class CurrencyManager:
             return True, None
         
         try:
-            last_claim_date = datetime.fromisoformat(last_claim)
-            now = datetime.now()
+            # Parse the stored date (could be old timestamp or new date format)
+            if 'T' in last_claim:  # Old timestamp format
+                last_claim_date = datetime.fromisoformat(last_claim).date()
+            else:  # New date format
+                last_claim_date = date.fromisoformat(last_claim)
             
-            # Check if 24 hours have passed
-            if now - last_claim_date >= timedelta(hours=24):
+            today = date.today()
+            
+            # Check if it's a new day
+            if today > last_claim_date:
                 return True, None
             else:
-                next_claim = last_claim_date + timedelta(hours=24)
-                time_left = next_claim - now
-                hours = int(time_left.total_seconds() // 3600)
-                minutes = int((time_left.total_seconds() % 3600) // 60)
-                return False, f"{hours}h {minutes}m"
+                return False, "You already claimed your daily bonus today!"
         
         except Exception as e:
             logger.error(f"Error parsing last claim date for user {user_id}: {e}")
@@ -175,14 +176,14 @@ class CurrencyManager:
         
         if not can_claim:
             user_data = await self.get_user_data(user_id)
-            return False, f"You already claimed your daily bonus! Next claim in {time_left}.", user_data["balance"]
+            return False, time_left, user_data["balance"]
         
         # Give daily bonus
         new_balance = await self.add_currency(user_id, DAILY_CLAIM)
         
-        # Update last claim time
+        # Update last claim date
         user_data = await self.get_user_data(user_id)
-        user_data["last_daily_claim"] = datetime.now().isoformat()
+        user_data["last_daily_claim"] = date.today().isoformat()
         await self.save_currency_data()
         
         logger.info(f"User {user_id} claimed daily bonus of ${DAILY_CLAIM}")
@@ -191,7 +192,7 @@ class CurrencyManager:
     async def can_claim_hangman_bonus(self, user_id: str) -> Tuple[bool, Optional[str]]:
         """
         Check if user can claim hangman daily bonus.
-        Returns (can_claim, time_until_next_claim).
+        Returns (can_claim, message_if_cannot_claim).
         """
         user_data = await self.get_user_data(user_id)
         last_claim = user_data["last_hangman_bonus_claim"]
@@ -200,18 +201,19 @@ class CurrencyManager:
             return True, None
         
         try:
-            last_claim_date = datetime.fromisoformat(last_claim)
-            now = datetime.now()
+            # Parse the stored date (could be old timestamp or new date format)
+            if 'T' in last_claim:  # Old timestamp format
+                last_claim_date = datetime.fromisoformat(last_claim).date()
+            else:  # New date format
+                last_claim_date = date.fromisoformat(last_claim)
             
-            # Check if 24 hours have passed
-            if now - last_claim_date >= timedelta(hours=24):
+            today = date.today()
+            
+            # Check if it's a new day
+            if today > last_claim_date:
                 return True, None
             else:
-                next_claim = last_claim_date + timedelta(hours=24)
-                time_left = next_claim - now
-                hours = int(time_left.total_seconds() // 3600)
-                minutes = int((time_left.total_seconds() % 3600) // 60)
-                return False, f"{hours}h {minutes}m"
+                return False, "You already claimed your hangman bonus today!"
         
         except Exception as e:
             logger.error(f"Error parsing last hangman bonus claim date for user {user_id}: {e}")
@@ -229,14 +231,14 @@ class CurrencyManager:
             
             if not can_claim:
                 user_data = await self.get_user_data(user_id)
-                return False, f"You already claimed your hangman bonus today! Next claim in {time_left}.", user_data["balance"]
+                return False, time_left, user_data["balance"]
             
             # Give hangman bonus
             new_balance = await self.add_currency(user_id, HANGMAN_DAILY_BONUS)
             
-            # Update last claim time
+            # Update last claim date
             user_data = await self.get_user_data(user_id)
-            user_data["last_hangman_bonus_claim"] = datetime.now().isoformat()
+            user_data["last_hangman_bonus_claim"] = date.today().isoformat()
             await self.save_currency_data()
             
             logger.info(f"User {user_id} claimed hangman bonus of ${HANGMAN_DAILY_BONUS}")
