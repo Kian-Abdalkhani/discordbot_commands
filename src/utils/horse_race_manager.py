@@ -9,9 +9,9 @@ from typing import Dict, List, Optional, Tuple
 import discord
 
 from src.config.settings import (
-    HORSE_STATS, HORSE_RACE_MIN_BET, HORSE_RACE_MAX_BET, 
-    HORSE_RACE_HOUSE_EDGE, HORSE_RACE_DURATION, HORSE_RANDOM_VARIATION,HORSE_RACE_UPDATE_INTERVAL,
-    HORSE_RACE_TRACK_LENGTH, HORSE_RACE_SCHEDULE
+    HORSE_STATS, HORSE_RACE_MIN_BET, HORSE_RACE_MAX_BET,
+    HORSE_RACE_HOUSE_EDGE, HORSE_RACE_DURATION, HORSE_RANDOM_VARIATION, HORSE_RACE_UPDATE_INTERVAL,
+    HORSE_RACE_TRACK_LENGTH, HORSE_RACE_SCHEDULE, BET_TYPES, HORSE_RACE_BET_WINDOW
 )
 
 logger = logging.getLogger(__name__)
@@ -125,20 +125,25 @@ class HorseRaceManager:
     async def save_current_bets(self):
         """Save current bets to JSON file asynchronously"""
         try:
+            logger.debug("Starting save_current_bets")
+            
             # Ensure race_data has current_bets section
             if not hasattr(self, 'current_bets'):
                 self.current_bets = {}
+                logger.debug("Initialized empty current_bets for saving")
                 
             # Update race_data with current bets
             self.race_data["current_bets"] = self.current_bets
+            logger.debug(f"Updated race_data with {len(self.current_bets)} user bet records")
             
             # Save to file asynchronously
             os.makedirs(os.path.dirname(self.data_file), exist_ok=True)
             async with aiofiles.open(self.data_file, 'w') as f:
                 await f.write(json.dumps(self.race_data, indent=2, default=str))
-            logger.debug(f"Saved current bets to {self.data_file}")
+            logger.debug(f"Successfully saved current bets to {self.data_file}")
+            
         except Exception as e:
-            logger.error(f"Error saving current bets: {e}")
+            logger.error(f"Error saving current bets: {e}", exc_info=True)
             
     async def load_current_bets(self):
         """Load current bets from JSON file"""
@@ -218,8 +223,8 @@ class HorseRaceManager:
         """Check if betting is currently allowed (before race starts)"""
         next_race = self.get_next_race_time()
         now = datetime.now()
-        # Allow betting starting 24 hours before race until race starts
-        betting_opens = next_race - timedelta(hours=24)
+        # Allow betting starting the configured # of hours before race until race starts
+        betting_opens = next_race - timedelta(hours=HORSE_RACE_BET_WINDOW)
         return betting_opens <= now < next_race and not self.race_in_progress
         
     async def get_current_horses(self) -> List[Horse]:
@@ -230,67 +235,132 @@ class HorseRaceManager:
             horses.append(horse)
         return horses
         
-    def calculate_payout_odds(self, horses: List[Horse]) -> Dict[int, float]:
+    def calculate_payout_odds(self, horses: List[Horse], bet_type: str = "win") -> Dict[int, float]:
         """Calculate payout odds for each horse with proper house edge and realistic odds"""
-        # Get true probabilities based on horse stats
-        probabilities = [horse.calculate_odds() for horse in horses]
-        total_prob = sum(probabilities)
+        try:
+            logger.debug(f"Calculating payout odds for bet_type: {bet_type}")
+            
+            # Get true probabilities based on horse stats
+            probabilities = [horse.calculate_odds() for horse in horses]
+            total_prob = sum(probabilities)
+            logger.debug(f"Raw probabilities sum: {total_prob}")
+            
+            # Normalize probabilities to ensure they sum to 1
+            normalized_probs = [p / total_prob for p in probabilities]
+            logger.debug(f"Normalized probabilities: {normalized_probs}")
+            
+            # Get bet type configuration
+            if bet_type not in BET_TYPES:
+                logger.error(f"Invalid bet_type: {bet_type}")
+                bet_type = "win"  # Fallback to win
+                
+            bet_config = BET_TYPES[bet_type]
+            bet_multiplier = bet_config["payout_multiplier"]
+            logger.debug(f"Bet type {bet_type} multiplier: {bet_multiplier}")
+            
+            # Apply house edge more aggressively to create realistic odds
+            odds = {}
+            for i, prob in enumerate(normalized_probs):
+                # Adjust probability based on bet type
+                if bet_type == "place":
+                    # For place bets, each horse has a chance to finish 1st OR 2nd
+                    # Approximate this as roughly double the chance compared to win-only
+                    adjusted_prob = min(prob * 1.8, 0.9)  # Cap at 90%
+                elif bet_type == "show":
+                    # For show bets, each horse has a chance to finish 1st, 2nd, OR 3rd
+                    # Approximate this as roughly triple the chance compared to win-only
+                    adjusted_prob = min(prob * 2.5, 0.95)  # Cap at 95%
+                elif bet_type == "last":
+                    # For last place, invert the probability (worst horse has best chance to finish last)
+                    adjusted_prob = 1 - prob
+                else:  # win
+                    adjusted_prob = prob
+                
+                # Apply house edge by reducing the player's expected return
+                house_adjusted_prob = adjusted_prob * (1 + HORSE_RACE_HOUSE_EDGE)
+                
+                # Convert to payout odds (what player receives per $1 bet)
+                payout_multiplier = 1 / house_adjusted_prob if house_adjusted_prob > 0 else 50.0
+                
+                # Apply bet type multiplier
+                payout_multiplier *= bet_multiplier
+                
+                # Ensure minimum odds of 1.1 (slight profit) and maximum of 50 for longshots
+                payout_multiplier = max(1.1, min(50.0, payout_multiplier))
+                
+                odds[i + 1] = round(payout_multiplier, 1)
+                
+            logger.debug(f"Calculated odds for {bet_type}: {odds}")
+            return odds
+            
+        except Exception as e:
+            logger.error(f"Error calculating payout odds for bet_type {bet_type}: {e}", exc_info=True)
+            # Return default odds as fallback
+            return {i + 1: 2.0 for i in range(len(horses))}
         
-        # Normalize probabilities to ensure they sum to 1
-        normalized_probs = [p / total_prob for p in probabilities]
-        
-        # Apply house edge more aggressively to create realistic odds
-        odds = {}
-        for i, prob in enumerate(normalized_probs):
-            # Apply house edge by reducing the player's expected return
-            # House edge reduces the payout, making odds less favorable for players
-            house_adjusted_prob = prob * (1 + HORSE_RACE_HOUSE_EDGE)
+    async def place_bet(self, user_id: str, horse_id: int, amount: int, bet_type: str = "win") -> Tuple[bool, str]:
+        """Place a bet on a horse with specified bet type"""
+        try:
+            logger.info(f"place_bet called - user_id: {user_id}, horse_id: {horse_id}, amount: {amount}, bet_type: {bet_type}")
             
-            # Convert to payout odds (what player receives per $1 bet)
-            # For a horse with 25% chance, fair odds would be 4:1, but house edge reduces this
-            payout_multiplier = 1 / house_adjusted_prob if house_adjusted_prob > 0 else 50.0
+            await self.load_current_bets()
+            logger.debug(f"Current bets loaded, race_in_progress: {self.race_in_progress}")
             
-            # Ensure minimum odds of 1.1 (slight profit) and maximum of 50 for longshots
-            payout_multiplier = max(1.1, min(50.0, payout_multiplier))
+            if not self.is_betting_time():
+                logger.warning(f"User {user_id} attempted to bet when betting is closed")
+                return False, "Betting is not currently open!"
+                
+            if amount < HORSE_RACE_MIN_BET:
+                logger.warning(f"User {user_id} bet amount {amount} below minimum {HORSE_RACE_MIN_BET}")
+                return False, f"Minimum bet is ${HORSE_RACE_MIN_BET:,.2f}!"
+                
+            if amount > HORSE_RACE_MAX_BET:
+                logger.warning(f"User {user_id} bet amount {amount} above maximum {HORSE_RACE_MAX_BET}")
+                return False, f"Maximum bet is ${HORSE_RACE_MAX_BET:,.2f}!"
+                
+            if horse_id < 1 or horse_id > len(HORSE_STATS):
+                logger.warning(f"User {user_id} invalid horse_id: {horse_id}")
+                return False, f"Invalid horse ID! Choose 1-{len(HORSE_STATS)}"
+                
+            if bet_type not in BET_TYPES:
+                logger.warning(f"User {user_id} invalid bet_type: {bet_type}")
+                return False, f"Invalid bet type! Choose from: {', '.join(BET_TYPES.keys())}"
+                
+            # Initialize current race if needed
+            if not hasattr(self, 'current_bets'):
+                self.current_bets = {}
+                logger.debug("Initialized empty current_bets")
+                
+            # Store bet
+            if user_id not in self.current_bets:
+                self.current_bets[user_id] = []
+                logger.debug(f"Created new bet list for user {user_id}")
+                
+            bet_data = {
+                "horse_id": horse_id,
+                "amount": amount,
+                "bet_type": bet_type,
+                "timestamp": datetime.now()
+            }
             
-            odds[i + 1] = round(payout_multiplier, 1)
+            self.current_bets[user_id].append(bet_data)
+            logger.debug(f"Added bet to user {user_id}: {bet_data}")
             
-        return odds
-        
-    async def place_bet(self, user_id: str, horse_id: int, amount: int) -> Tuple[bool, str]:
-        """Place a bet on a horse"""
-        await self.load_current_bets()
-        if not self.is_betting_time():
-            return False, "Betting is not currently open!"
+            # Save bets to file immediately (asynchronously)
+            logger.debug("Saving current bets to file")
+            await self.save_current_bets()
             
-        if amount < HORSE_RACE_MIN_BET:
-            return False, f"Minimum bet is ${HORSE_RACE_MIN_BET:,.2f}!"
+            horse_name = HORSE_STATS[horse_id - 1]["name"]
+            bet_name = BET_TYPES[bet_type]["name"]
+            bet_description = BET_TYPES[bet_type]["description"]
+            success_message = f"{bet_name} bet placed: ${amount:,.2f} on {horse_name} ({bet_description})"
             
-        if amount > HORSE_RACE_MAX_BET:
-            return False, f"Maximum bet is ${HORSE_RACE_MAX_BET:,.2f}!"
+            logger.info(f"Bet successfully placed for user {user_id}: {success_message}")
+            return True, success_message
             
-        if horse_id < 1 or horse_id > len(HORSE_STATS):
-            return False, f"Invalid horse ID! Choose 1-{len(HORSE_STATS)}"
-            
-        # Initialize current race if needed
-        if not hasattr(self, 'current_bets'):
-            self.current_bets = {}
-            
-        # Store bet
-        if user_id not in self.current_bets:
-            self.current_bets[user_id] = []
-            
-        self.current_bets[user_id].append({
-            "horse_id": horse_id,
-            "amount": amount,
-            "timestamp": datetime.now()
-        })
-        
-        # Save bets to file immediately (asynchronously)
-        await self.save_current_bets()
-        
-        horse_name = HORSE_STATS[horse_id - 1]["name"]
-        return True, f"Bet placed: ${amount:,.2f} on {horse_name}!"
+        except Exception as e:
+            logger.error(f"Error in place_bet for user {user_id}: {e}", exc_info=True)
+            return False, "An error occurred while placing your bet. Please try again."
         
     async def get_user_bets(self, user_id: str) -> List[Dict]:
         """Get all bets for a user"""
@@ -307,7 +377,7 @@ class HorseRaceManager:
         return self.current_bets
         
     async def format_all_bets_summary(self, all_bets: Dict[str, List[Dict]]) -> str:
-        """Format all bets into a readable summary showing individual bets per horse"""
+        """Format all bets into a readable summary showing individual bets per horse with bet types"""
         if not all_bets:
             return "No bets placed yet"
             
@@ -321,9 +391,14 @@ class HorseRaceManager:
             for bet in bets:
                 horse_id = bet['horse_id']
                 amount = bet['amount']
+                bet_type = bet.get('bet_type', 'win')  # Default to win for backward compatibility
                 if horse_id not in horse_bets:
                     horse_bets[horse_id] = []
-                horse_bets[horse_id].append({'user_id': user_id, 'amount': amount})
+                horse_bets[horse_id].append({
+                    'user_id': user_id, 
+                    'amount': amount, 
+                    'bet_type': bet_type
+                })
                 total_bet_amount += amount
                 total_bets += 1
         
@@ -341,14 +416,15 @@ class HorseRaceManager:
             
             summary_lines.append(f"{horse_color} **{horse_name}** (Total: {horse_total:,.2f}):")
             
-            # Show individual bets
+            # Show individual bets with bet type
             for bet in bets:
+                bet_type_name = BET_TYPES[bet['bet_type']]['name']
                 # Show last 4 digits of user ID for privacy
-                summary_lines.append(f"  • User {bet['user_id'][-4:]}: {bet['amount']:,.2f} ")
+                summary_lines.append(f"  • User {bet['user_id'][-4:]}: ${bet['amount']:,.2f} ({bet_type_name})")
             
             summary_lines.append("")  # Empty line between horses
             
-        summary_lines.append(f"**Grand Total**: {total_bets} bets, {total_bet_amount:,.2f}")
+        summary_lines.append(f"**Grand Total**: {total_bets} bets, ${total_bet_amount:,.2f}")
         return "\n".join(summary_lines)
         
     async def start_race(self) -> List[Horse]:
@@ -430,7 +506,7 @@ class HorseRaceManager:
         return self.current_race["results"]
         
     async def calculate_payouts(self) -> Dict[str, Dict]:
-        """Calculate payouts for all bets"""
+        """Calculate payouts for all bets based on bet type and finishing positions"""
         if not self.current_race or not self.current_race["finished"]:
             return {}
             
@@ -438,10 +514,7 @@ class HorseRaceManager:
             return {}
             
         results = self.current_race["results"]
-        winning_horse_id = results[0]["horse_id"]
-        
         horses = await self.get_current_horses()
-        odds = self.calculate_payout_odds(horses)
         
         payouts = {}
         
@@ -449,28 +522,62 @@ class HorseRaceManager:
             user_payout = {"total_winnings": 0, "winning_bets": [], "losing_bets": []}
             
             for bet in bets:
-                if bet["horse_id"] == winning_horse_id:
+                bet_type = bet.get("bet_type", "win")  # Default to win for backward compatibility
+                horse_id = bet["horse_id"]
+                amount = bet["amount"]
+                
+                # Get odds for this bet type
+                odds = self.calculate_payout_odds(horses, bet_type)
+                
+                # Check if this bet won based on the bet type
+                bet_won = self._check_bet_win(horse_id, bet_type, results)
+                
+                if bet_won:
                     # Winning bet
-                    winnings = int(bet["amount"] * odds[bet["horse_id"]])
+                    winnings = int(amount * odds[horse_id])
                     user_payout["total_winnings"] += winnings
                     user_payout["winning_bets"].append({
-                        "horse_id": bet["horse_id"],
-                        "horse_name": HORSE_STATS[bet["horse_id"] - 1]["name"],
-                        "bet_amount": bet["amount"],
+                        "horse_id": horse_id,
+                        "horse_name": HORSE_STATS[horse_id - 1]["name"],
+                        "bet_amount": amount,
+                        "bet_type": BET_TYPES[bet_type]["name"],
                         "winnings": winnings,
-                        "odds": odds[bet["horse_id"]]
+                        "odds": odds[horse_id]
                     })
                 else:
                     # Losing bet
                     user_payout["losing_bets"].append({
-                        "horse_id": bet["horse_id"],
-                        "horse_name": HORSE_STATS[bet["horse_id"] - 1]["name"],
-                        "bet_amount": bet["amount"]
+                        "horse_id": horse_id,
+                        "horse_name": HORSE_STATS[horse_id - 1]["name"],
+                        "bet_amount": amount,
+                        "bet_type": BET_TYPES[bet_type]["name"]
                     })
                     
             payouts[user_id] = user_payout
             
         return payouts
+    
+    def _check_bet_win(self, horse_id: int, bet_type: str, results: List[Dict]) -> bool:
+        """Check if a bet wins based on the bet type and race results"""
+        bet_config = BET_TYPES[bet_type]
+        
+        # Find the horse's finishing position
+        horse_position = None
+        for i, result in enumerate(results):
+            if result["horse_id"] == horse_id:
+                horse_position = i + 1  # Position is 1-indexed
+                break
+        
+        if horse_position is None:
+            return False
+        
+        # Check if the horse finished in a winning position for this bet type
+        if bet_type == "last":
+            # For last place bets, check if horse finished last
+            return horse_position == len(results)
+        else:
+            # For win, place, show bets, check if position is in the winning positions
+            return horse_position in bet_config["positions"]
         
     async def reset_race(self):
         """Reset race state after completion"""
@@ -585,7 +692,7 @@ class HorseRaceManager:
         return embed
         
     def create_betting_embed(self, horses: List[Horse], bot=None) -> discord.Embed:
-        """Create Discord embed for betting information with bets shown under each horse"""
+        """Create Discord embed for betting information with all bet types and odds shown under each horse"""
         embed = discord.Embed(
             title="🏇 Horse Racing - Place Your Bets! 🏇",
             description="Multiple races per week! Check the schedule below.",
@@ -593,7 +700,11 @@ class HorseRaceManager:
             timestamp=datetime.now()
         )
         
-        odds = self.calculate_payout_odds(horses)
+        # Get odds for all bet types
+        win_odds = self.calculate_payout_odds(horses, "win")
+        place_odds = self.calculate_payout_odds(horses, "place")
+        show_odds = self.calculate_payout_odds(horses, "show")
+        last_odds = self.calculate_payout_odds(horses, "last")
         
         # Get current bets organized by horse
         horse_bets = {}
@@ -601,32 +712,50 @@ class HorseRaceManager:
             for user_id, bets in self.current_bets.items():
                 for bet in bets:
                     horse_id = bet['horse_id']
+                    bet_type = bet.get('bet_type', 'win')
                     if horse_id not in horse_bets:
                         horse_bets[horse_id] = []
-                    horse_bets[horse_id].append({'user_id': user_id, 'amount': bet['amount']})
+                    horse_bets[horse_id].append({
+                        'user_id': user_id, 
+                        'amount': bet['amount'],
+                        'bet_type': bet_type
+                    })
         
         horses_info = ""
         for horse in horses:
             horses_info += f"{horse.color} **{horse.id}. {horse.name}**\n"
             horses_info += f"Speed: {horse.speed} | Stamina: {horse.stamina} | Acceleration: {horse.acceleration}\n"
             
-            # Format odds as "X:1 (Payout-Xx bet placed)"
-            payout_multiplier = odds[horse.id]
-            odds_ratio = f"{payout_multiplier:.1f}:1"
-            payout_text = f"(Payout-{payout_multiplier:.1f}x bet placed)"
-            horses_info += f"Odds: {odds_ratio} {payout_text}\n"
+            # Show odds for all bet types
+            horses_info += f"**Win** {win_odds[horse.id]:.1f}:1 | "
+            horses_info += f"**Place** {place_odds[horse.id]:.1f}:1 | "
+            horses_info += f"**Show** {show_odds[horse.id]:.1f}:1 | "
+            horses_info += f"**Last** {last_odds[horse.id]:.1f}:1\n"
             
-            # Show bets for this horse
+            # Show bets for this horse grouped by bet type
             if horse.id in horse_bets:
                 horses_info += "Bets:\n"
+                # Group bets by type
+                bet_types = {}
                 for bet in horse_bets[horse.id]:
-                    # Get username from bot if available
-                    if bot:
-                        user = bot.get_user(int(bet['user_id']))
-                        username = user.display_name if user else f"User {bet['user_id'][-4:]}"
-                    else:
-                        username = f"User {bet['user_id'][-4:]}"
-                    horses_info += f"  {username} - ${bet['amount']:,.2f}\n"
+                    bet_type = bet['bet_type']
+                    if bet_type not in bet_types:
+                        bet_types[bet_type] = []
+                    bet_types[bet_type].append(bet)
+                
+                for bet_type, type_bets in bet_types.items():
+                    bet_name = BET_TYPES[bet_type]['name']
+                    horses_info += f"  {bet_name}: "
+                    bet_strings = []
+                    for bet in type_bets:
+                        # Get username from bot if available
+                        if bot:
+                            user = bot.get_user(int(bet['user_id']))
+                            username = user.display_name if user else f"User {bet['user_id'][-4:]}"
+                        else:
+                            username = f"User {bet['user_id'][-4:]}"
+                        bet_strings.append(f"{username} ${bet['amount']:,.2f}")
+                    horses_info += ", ".join(bet_strings) + "\n"
             else:
                 horses_info += "Bets: None\n"
                 
@@ -635,6 +764,17 @@ class HorseRaceManager:
         embed.add_field(
             name="Horses & Odds",
             value=horses_info,
+            inline=False
+        )
+        
+        # Add bet type explanations
+        bet_explanations = ""
+        for bet_type, config in BET_TYPES.items():
+            bet_explanations += f"**{config['name']}**: {config['description']}\n"
+        
+        embed.add_field(
+            name="📋 Bet Types",
+            value=bet_explanations,
             inline=False
         )
         
@@ -665,6 +805,6 @@ class HorseRaceManager:
                 inline=True
             )
         
-        embed.set_footer(text="Use /horserace_bet <horse_id> <amount> to place a bet!")
+        embed.set_footer(text="Use /horserace_bet to place a bet with different bet types!")
         
         return embed

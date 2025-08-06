@@ -5,10 +5,114 @@ from discord import app_commands
 import logging
 from datetime import datetime, timedelta
 
-from src.config.settings import GUILD_ID, HORSE_RACE_UPDATE_INTERVAL, HORSE_RACE_DURATION, HORSE_RACE_ALLOW_ADMIN_START, HORSE_RACE_SCHEDULE,HORSE_RACE_CHANNEL_ID
+from src.config.settings import GUILD_ID, HORSE_RACE_UPDATE_INTERVAL, HORSE_RACE_DURATION, HORSE_RACE_ALLOW_ADMIN_START, HORSE_RACE_SCHEDULE,HORSE_RACE_CHANNEL_ID, BET_TYPES, HORSE_STATS
 from src.utils.horse_race_manager import HorseRaceManager
 
 logger = logging.getLogger(__name__)
+
+class HorseSelect(discord.ui.Select):
+    """Dropdown for selecting horse"""
+    def __init__(self, amount: int, cog):
+        self.amount = amount
+        self.cog = cog
+        
+        options = []
+        for i, horse in enumerate(HORSE_STATS, 1):
+            options.append(discord.SelectOption(
+                label=f"Horse {i}: {horse['name']}",
+                description=f"{horse['color']} - Speed: {horse['speed']}, Stamina: {horse['stamina']}",
+                value=str(i)
+            ))
+        
+        super().__init__(placeholder="Choose your horse...", options=options)
+    
+    async def callback(self, interaction: discord.Interaction):
+        try:
+            logger.info(f"Horse selection callback triggered - User: {interaction.user.id}, Amount: {self.amount}")
+            horse_id = int(self.values[0])
+            logger.info(f"Selected horse: {horse_id}")
+            await self.cog.show_bet_type_selection_after_horse(interaction, horse_id, self.amount)
+            logger.info(f"Bet type selection displayed for user {interaction.user.id}")
+        except Exception as e:
+            logger.error(f"Error in horse selection callback: {e}", exc_info=True)
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message("❌ Error processing your horse selection!", ephemeral=True)
+                else:
+                    await interaction.followup.send("❌ Error processing your horse selection!", ephemeral=True)
+            except Exception as followup_error:
+                logger.error(f"Failed to send error message to user: {followup_error}")
+
+class BetTypeSelect(discord.ui.Select):
+    """Dropdown for selecting bet type"""
+    def __init__(self, horse_id: int, amount: int, cog):
+        self.horse_id = horse_id
+        self.amount = amount
+        self.cog = cog
+        
+        options = []
+        for bet_type, config in BET_TYPES.items():
+            options.append(discord.SelectOption(
+                label=config["name"],
+                description=config["description"],
+                value=bet_type
+            ))
+        
+        super().__init__(placeholder="Choose your bet type...", options=options)
+    
+    async def callback(self, interaction: discord.Interaction):
+        try:
+            logger.info(f"Bet type selection callback triggered - User: {interaction.user.id}, Horse: {self.horse_id}, Amount: {self.amount}")
+            bet_type = self.values[0]
+            logger.info(f"Selected bet type: {bet_type}")
+            await self.cog.place_bet_with_type(interaction, self.horse_id, self.amount, bet_type)
+            logger.info(f"Bet placed successfully for user {interaction.user.id}")
+        except Exception as e:
+            logger.error(f"Error in bet type selection callback: {e}", exc_info=True)
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message("❌ Error processing your bet selection!", ephemeral=True)
+                else:
+                    await interaction.followup.send("❌ Error processing your bet selection!", ephemeral=True)
+            except Exception as followup_error:
+                logger.error(f"Failed to send error message to user: {followup_error}")
+
+class BetAmountView(discord.ui.View):
+    """View containing the horse selection dropdown"""
+    def __init__(self, amount: int, cog):
+        super().__init__(timeout=60)
+        self.amount = amount
+        self.cog = cog
+        self.add_item(HorseSelect(amount, cog))
+    
+    async def on_timeout(self):
+        """Handle view timeout"""
+        try:
+            logger.info(f"Horse selection timed out for amount {self.amount}")
+            # Disable all items
+            for item in self.children:
+                item.disabled = True
+        except Exception as e:
+            logger.error(f"Error in BetAmountView timeout handler: {e}")
+
+class BetView(discord.ui.View):
+    """View containing the bet type dropdown"""
+    def __init__(self, horse_id: int, amount: int, cog):
+        super().__init__(timeout=60)
+        self.horse_id = horse_id
+        self.amount = amount
+        self.cog = cog
+        self.add_item(BetTypeSelect(horse_id, amount, cog))
+    
+    async def on_timeout(self):
+        """Handle view timeout"""
+        try:
+            logger.info(f"Bet selection timed out for horse {self.horse_id}, amount {self.amount}")
+            # Disable all items
+            for item in self.children:
+                item.disabled = True
+        except Exception as e:
+            logger.error(f"Error in BetView timeout handler: {e}")
 
 class HorseRacingCog(commands.Cog):
     def __init__(self, bot):
@@ -78,11 +182,10 @@ class HorseRacingCog(commands.Cog):
         
     @app_commands.command(name="horserace_bet", description="Place a bet on a horse")
     @app_commands.describe(
-        horse_id="Horse ID to bet on (1-8)",
         amount="Amount to bet"
     )
-    async def horserace_bet(self, interaction: discord.Interaction, horse_id: int, amount: int):
-        await self.place_bet(interaction, horse_id, amount)
+    async def horserace_bet(self, interaction: discord.Interaction, amount: int):
+        await self.show_horse_selection(interaction, amount)
         
     @app_commands.command(name="horserace_start", description="Start a horse race manually (admin only, if enabled)")
     async def horserace_start(self, interaction: discord.Interaction):
@@ -179,6 +282,327 @@ class HorseRacingCog(commands.Cog):
                 "❌ Error placing bet. Please try again!", ephemeral=True
             )
             
+    async def show_horse_selection(self, interaction: discord.Interaction, amount: int):
+        """Show horse selection dropdown"""
+        user_id = str(interaction.user.id)
+        
+        try:
+            logger.info(f"Showing horse selection - User: {user_id}, Amount: {amount}")
+            
+            # Check if user has enough currency
+            user_balance = await self.currency_manager.get_balance(user_id)
+            logger.debug(f"User {user_id} balance: ${user_balance:,.2f}")
+            
+            if user_balance < amount:
+                error_msg = f"❌ Insufficient funds! You have ${user_balance:,.2f}, need ${amount:,.2f}."
+                logger.warning(f"User {user_id} insufficient funds: has {user_balance}, needs {amount}")
+                await interaction.response.send_message(error_msg, ephemeral=True)
+                return
+            
+            # Check betting conditions
+            betting_open = self.horse_race_manager.is_betting_time()
+            race_in_progress = self.horse_race_manager.race_in_progress
+            logger.debug(f"Betting conditions - betting_open: {betting_open}, race_in_progress: {race_in_progress}")
+            
+            if not betting_open:
+                logger.warning(f"User {user_id} attempted to bet when betting is closed")
+                await interaction.response.send_message("❌ Betting is not currently open!", ephemeral=True)
+                return
+                
+            if race_in_progress:
+                logger.warning(f"User {user_id} attempted to bet during race")
+                await interaction.response.send_message("❌ Race is in progress, betting is closed!", ephemeral=True)
+                return
+            
+            # Show horse selection dropdown
+            embed = discord.Embed(
+                title="🐎 Select Your Horse",
+                description=f"Choose a horse to place your ${amount:,.2f} bet on:",
+                color=0x0099ff
+            )
+            
+            # Show horse stats
+            horses_info = ""
+            horses = await self.horse_race_manager.get_current_horses()
+            
+            for i, horse_stat in enumerate(HORSE_STATS, 1):
+                horses_info += f"**Horse {i}: {horse_stat['name']}** {horse_stat['color']}\n"
+                horses_info += f"Speed: {horse_stat['speed']} | Stamina: {horse_stat['stamina']}\n\n"
+            
+            embed.add_field(
+                name="🏇 Available Horses",
+                value=horses_info,
+                inline=False
+            )
+            
+            # Create the view with dropdown
+            logger.debug("Creating horse selection view with dropdown")
+            view = BetAmountView(amount, self)
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            logger.info(f"Horse selection displayed successfully for user {user_id}")
+            
+        except Exception as e:
+            logger.error(f"Error showing horse selection for user {user_id}: {e}", exc_info=True)
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(
+                        "❌ Error showing horse selection. Please try again!", ephemeral=True
+                    )
+                else:
+                    await interaction.followup.send(
+                        "❌ Error showing horse selection. Please try again!", ephemeral=True
+                    )
+            except Exception as error_response_error:
+                logger.error(f"Failed to send error response to user {user_id}: {error_response_error}")
+
+    async def show_bet_type_selection_after_horse(self, interaction: discord.Interaction, horse_id: int, amount: int):
+        """Show bet type selection dropdown after horse is selected"""
+        user_id = str(interaction.user.id)
+        
+        try:
+            logger.info(f"Showing bet type selection after horse - User: {user_id}, Horse: {horse_id}, Amount: {amount}")
+            
+            # Validate horse_id range
+            if horse_id < 1 or horse_id > len(HORSE_STATS):
+                error_msg = f"❌ Invalid horse ID! Choose 1-{len(HORSE_STATS)}"
+                logger.warning(f"Invalid horse ID {horse_id} for user {user_id}")
+                await interaction.response.edit_message(content=error_msg, embed=None, view=None)
+                return
+            
+            # Double-check currency again in case balance changed
+            user_balance = await self.currency_manager.get_balance(user_id)
+            logger.debug(f"User {user_id} balance: ${user_balance:,.2f}")
+            
+            if user_balance < amount:
+                error_msg = f"❌ Insufficient funds! You have ${user_balance:,.2f}, need ${amount:,.2f}."
+                logger.warning(f"User {user_id} insufficient funds: has {user_balance}, needs {amount}")
+                await interaction.response.edit_message(content=error_msg, embed=None, view=None)
+                return
+            
+            # Show horse info and bet type dropdown
+            horse_name = HORSE_STATS[horse_id - 1]["name"]
+            horse_color = HORSE_STATS[horse_id - 1]["color"]
+            logger.debug(f"Selected horse: {horse_name} ({horse_color})")
+            
+            embed = discord.Embed(
+                title="🎰 Select Bet Type",
+                description=f"Placing ${amount:,.2f} bet on {horse_color} **{horse_name}**",
+                color=0x0099ff
+            )
+            
+            # Show odds for each bet type
+            logger.debug("Calculating odds for all bet types")
+            horses = await self.horse_race_manager.get_current_horses()
+            odds_info = ""
+            
+            for bet_type, config in BET_TYPES.items():
+                try:
+                    odds = self.horse_race_manager.calculate_payout_odds(horses, bet_type)
+                    payout_multiplier = odds[horse_id]
+                    potential_winnings = int(amount * payout_multiplier)
+                    odds_info += f"**{config['name']}**: {payout_multiplier:.1f}:1 (Win: ${potential_winnings:,.2f})\n"
+                    odds_info += f"*{config['description']}*\n\n"
+                    logger.debug(f"{bet_type} odds for horse {horse_id}: {payout_multiplier:.1f}:1")
+                except Exception as odds_error:
+                    logger.error(f"Error calculating {bet_type} odds: {odds_error}")
+                    odds_info += f"**{config['name']}**: Error calculating odds\n"
+            
+            embed.add_field(
+                name="🎯 Odds & Potential Winnings",
+                value=odds_info,
+                inline=False
+            )
+            
+            # Create the view with dropdown
+            logger.debug("Creating bet view with dropdown")
+            view = BetView(horse_id, amount, self)
+            await interaction.response.edit_message(content=None, embed=embed, view=view)
+            logger.info(f"Bet type selection displayed successfully for user {user_id}")
+            
+        except Exception as e:
+            logger.error(f"Error showing bet type selection after horse for user {user_id}: {e}", exc_info=True)
+            try:
+                await interaction.response.edit_message(
+                    content="❌ Error showing bet options. Please try again!",
+                    embed=None,
+                    view=None
+                )
+            except Exception as error_response_error:
+                logger.error(f"Failed to send error response to user {user_id}: {error_response_error}")
+
+    async def show_bet_type_selection(self, interaction: discord.Interaction, horse_id: int, amount: int):
+        """Show bet type selection dropdown"""
+        user_id = str(interaction.user.id)
+        
+        try:
+            logger.info(f"Showing bet type selection - User: {user_id}, Horse: {horse_id}, Amount: {amount}")
+            
+            # Validate horse_id range
+            if horse_id < 1 or horse_id > len(HORSE_STATS):
+                error_msg = f"❌ Invalid horse ID! Choose 1-{len(HORSE_STATS)}"
+                logger.warning(f"Invalid horse ID {horse_id} for user {user_id}")
+                await interaction.response.send_message(error_msg, ephemeral=True)
+                return
+            
+            # Check if user has enough currency
+            user_balance = await self.currency_manager.get_balance(user_id)
+            logger.debug(f"User {user_id} balance: ${user_balance:,.2f}")
+            
+            if user_balance < amount:
+                error_msg = f"❌ Insufficient funds! You have ${user_balance:,.2f}, need ${amount:,.2f}."
+                logger.warning(f"User {user_id} insufficient funds: has {user_balance}, needs {amount}")
+                await interaction.response.send_message(error_msg, ephemeral=True)
+                return
+            
+            # Check betting conditions
+            betting_open = self.horse_race_manager.is_betting_time()
+            race_in_progress = self.horse_race_manager.race_in_progress
+            logger.debug(f"Betting conditions - betting_open: {betting_open}, race_in_progress: {race_in_progress}")
+            
+            if not betting_open:
+                logger.warning(f"User {user_id} attempted to bet when betting is closed")
+                await interaction.response.send_message("❌ Betting is not currently open!", ephemeral=True)
+                return
+                
+            if race_in_progress:
+                logger.warning(f"User {user_id} attempted to bet during race")
+                await interaction.response.send_message("❌ Race is in progress, betting is closed!", ephemeral=True)
+                return
+            
+            # Show horse info and bet type dropdown
+            horse_name = HORSE_STATS[horse_id - 1]["name"]
+            horse_color = HORSE_STATS[horse_id - 1]["color"]
+            logger.debug(f"Selected horse: {horse_name} ({horse_color})")
+            
+            embed = discord.Embed(
+                title="🎰 Select Bet Type",
+                description=f"Placing ${amount:,.2f} bet on {horse_color} **{horse_name}**",
+                color=0x0099ff
+            )
+            
+            # Show odds for each bet type
+            logger.debug("Calculating odds for all bet types")
+            horses = await self.horse_race_manager.get_current_horses()
+            odds_info = ""
+            
+            for bet_type, config in BET_TYPES.items():
+                try:
+                    odds = self.horse_race_manager.calculate_payout_odds(horses, bet_type)
+                    payout_multiplier = odds[horse_id]
+                    potential_winnings = int(amount * payout_multiplier)
+                    odds_info += f"**{config['name']}**: {payout_multiplier:.1f}:1 (Win: ${potential_winnings:,.2f})\n"
+                    odds_info += f"*{config['description']}*\n\n"
+                    logger.debug(f"{bet_type} odds for horse {horse_id}: {payout_multiplier:.1f}:1")
+                except Exception as odds_error:
+                    logger.error(f"Error calculating {bet_type} odds: {odds_error}")
+                    odds_info += f"**{config['name']}**: Error calculating odds\n"
+            
+            embed.add_field(
+                name="🎯 Odds & Potential Winnings",
+                value=odds_info,
+                inline=False
+            )
+            
+            # Create the view with dropdown
+            logger.debug("Creating bet view with dropdown")
+            view = BetView(horse_id, amount, self)
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            logger.info(f"Bet type selection displayed successfully for user {user_id}")
+            
+        except Exception as e:
+            logger.error(f"Error showing bet type selection for user {user_id}: {e}", exc_info=True)
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(
+                        "❌ Error showing bet options. Please try again!", ephemeral=True
+                    )
+                else:
+                    await interaction.followup.send(
+                        "❌ Error showing bet options. Please try again!", ephemeral=True
+                    )
+            except Exception as error_response_error:
+                logger.error(f"Failed to send error response to user {user_id}: {error_response_error}")
+    
+    async def place_bet_with_type(self, interaction: discord.Interaction, horse_id: int, amount: int, bet_type: str):
+        """Place a bet with the selected type"""
+        user_id = str(interaction.user.id)
+        
+        try:
+            logger.info(f"Placing bet - User: {user_id}, Horse: {horse_id}, Amount: {amount}, Type: {bet_type}")
+            
+            # Double-check currency again in case balance changed
+            user_balance = await self.currency_manager.get_balance(user_id)
+            logger.debug(f"User balance: ${user_balance:,.2f}")
+            
+            if user_balance < amount:
+                error_msg = f"❌ Insufficient funds! You have ${user_balance:,.2f}, need ${amount:,.2f}."
+                logger.warning(f"Insufficient funds for user {user_id}: has {user_balance}, needs {amount}")
+                
+                # Use edit_message since the interaction was already responded to in the dropdown display
+                await interaction.response.edit_message(
+                    content=error_msg,
+                    embed=None,
+                    view=None
+                )
+                return
+                
+            # Place the bet with the selected type
+            logger.debug(f"Calling horse_race_manager.place_bet for user {user_id}")
+            success, message = await self.horse_race_manager.place_bet(user_id, horse_id, amount, bet_type)
+            logger.debug(f"Bet placement result: success={success}, message={message}")
+            
+            if success:
+                # Subtract bet amount from user's balance
+                logger.debug(f"Subtracting {amount} from user {user_id} balance")
+                await self.currency_manager.subtract_currency(user_id, amount)
+                
+                embed = discord.Embed(
+                    title="✅ Bet Placed Successfully!",
+                    description=message,
+                    color=0x00ff00
+                )
+                
+                # Show updated balance
+                new_balance = await self.currency_manager.get_balance(user_id)
+                embed.add_field(
+                    name="Balance",
+                    value=f"${new_balance:,.2f} remaining",
+                    inline=True
+                )
+                
+                logger.info(f"Bet successfully placed for user {user_id}, new balance: ${new_balance:,.2f}")
+                
+                # Use edit_message since the interaction was already responded to in the dropdown display
+                await interaction.response.edit_message(
+                    content=None,
+                    embed=embed,
+                    view=None
+                )
+            else:
+                logger.warning(f"Bet placement failed for user {user_id}: {message}")
+                await interaction.response.edit_message(
+                    content=f"❌ {message}",
+                    embed=None,
+                    view=None
+                )
+                
+        except Exception as e:
+            logger.error(f"Error placing bet with type for user {user_id}: {e}", exc_info=True)
+            try:
+                await interaction.response.edit_message(
+                    content="❌ Error placing bet. Please try again!",
+                    embed=None,
+                    view=None
+                )
+            except Exception as edit_error:
+                logger.error(f"Failed to edit message with error for user {user_id}: {edit_error}")
+                try:
+                    await interaction.followup.send(
+                        "❌ Error placing bet. Please try again!", ephemeral=True
+                    )
+                except Exception as followup_error:
+                    logger.error(f"Failed to send followup message to user {user_id}: {followup_error}")
+            
     async def show_user_bets(self, interaction: discord.Interaction):
         """Show user's current bets"""
         user_id = str(interaction.user.id)
@@ -204,9 +628,10 @@ class HorseRacingCog(commands.Cog):
             bet_details = []
             
             for bet in bets:
-                from src.config.settings import HORSE_STATS
                 horse_name = HORSE_STATS[bet["horse_id"] - 1]["name"]
-                bet_details.append(f"🐎 **{horse_name}** - {bet['amount']:,.2f}")
+                bet_type = bet.get("bet_type", "win")
+                bet_type_name = BET_TYPES[bet_type]["name"]
+                bet_details.append(f"🐎 **{horse_name}** - ${bet['amount']:,.2f} ({bet_type_name})")
                 total_bet += bet['amount']
                 
             embed.add_field(
@@ -217,7 +642,7 @@ class HorseRacingCog(commands.Cog):
             
             embed.add_field(
                 name="Total Bet Amount",
-                value=f"{total_bet:,.2f}",
+                value=f"${total_bet:,.2f}",
                 inline=True
             )
             

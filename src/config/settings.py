@@ -68,6 +68,35 @@ HORSE_RACE_DURATION = 90  # Race animation duration in seconds (1.5 minutes)
 HORSE_RACE_UPDATE_INTERVAL = 1.5  # Update race progress every 1.5 seconds for smoother animation
 HORSE_RACE_TRACK_LENGTH = 1200  # Track length in meters
 HORSE_RANDOM_VARIATION = 15 # The randomness factor; the higher, the more random race outputs are
+HORSE_RACE_BET_WINDOW = 48 # The number of hours that betting is open prior to the upcoming horse race
+
+# Bet Types Configuration
+BET_TYPES = {
+    "win": {
+        "name": "Win",
+        "description": "Horse must finish 1st place",
+        "positions": [1],
+        "payout_multiplier": 1.0  # Base payout
+    },
+    "place": {
+        "name": "Place", 
+        "description": "Horse must finish 1st or 2nd place",
+        "positions": [1, 2],
+        "payout_multiplier": 0.6  # Reduced payout for easier bet
+    },
+    "show": {
+        "name": "Show",
+        "description": "Horse must finish 1st, 2nd, or 3rd place", 
+        "positions": [1, 2, 3],
+        "payout_multiplier": 0.4  # Further reduced payout
+    },
+    "last": {
+        "name": "Last",
+        "description": "Horse must finish in last place",
+        "positions": [-1],  # Special case for last place
+        "payout_multiplier": 0.8  # High payout but not as high as win
+    }
+}
 
 # Admin Controls
 # Set to False to disable admin manual race starts (races will only run on schedule)
