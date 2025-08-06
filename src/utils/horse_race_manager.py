@@ -226,10 +226,10 @@ class HorseRaceManager:
             return False, "Betting is not currently open!"
             
         if amount < HORSE_RACE_MIN_BET:
-            return False, f"Minimum bet is {HORSE_RACE_MIN_BET:,} coins!"
+            return False, f"Minimum bet is ${HORSE_RACE_MIN_BET:,.2f}!"
             
         if amount > HORSE_RACE_MAX_BET:
-            return False, f"Maximum bet is {HORSE_RACE_MAX_BET:,} coins!"
+            return False, f"Maximum bet is ${HORSE_RACE_MAX_BET:,.2f}!"
             
         if horse_id < 1 or horse_id > len(HORSE_STATS):
             return False, f"Invalid horse ID! Choose 1-{len(HORSE_STATS)}"
@@ -249,7 +249,7 @@ class HorseRaceManager:
         })
         
         horse_name = HORSE_STATS[horse_id - 1]["name"]
-        return True, f"Bet placed: {amount:,} coins on {horse_name}!"
+        return True, f"Bet placed: ${amount:,.2f} on {horse_name}!"
         
     async def get_user_bets(self, user_id: str) -> List[Dict]:
         """Get all bets for a user"""
@@ -296,16 +296,16 @@ class HorseRaceManager:
             # Calculate total for this horse
             horse_total = sum(bet['amount'] for bet in bets)
             
-            summary_lines.append(f"{horse_color} **{horse_name}** (Total: {horse_total:,} coins):")
+            summary_lines.append(f"{horse_color} **{horse_name}** (Total: {horse_total:,.2f}):")
             
             # Show individual bets
             for bet in bets:
                 # Show last 4 digits of user ID for privacy
-                summary_lines.append(f"  • User {bet['user_id'][-4:]}: {bet['amount']:,} coins")
+                summary_lines.append(f"  • User {bet['user_id'][-4:]}: {bet['amount']:,.2f} ")
             
             summary_lines.append("")  # Empty line between horses
             
-        summary_lines.append(f"**Grand Total**: {total_bets} bets, {total_bet_amount:,} coins")
+        summary_lines.append(f"**Grand Total**: {total_bets} bets, {total_bet_amount:,.2f}")
         return "\n".join(summary_lines)
         
     async def start_race(self) -> List[Horse]:
@@ -581,7 +581,7 @@ class HorseRaceManager:
                         username = user.display_name if user else f"User {bet['user_id'][-4:]}"
                     else:
                         username = f"User {bet['user_id'][-4:]}"
-                    horses_info += f"  {username} - {bet['amount']:,} coins\n"
+                    horses_info += f"  {username} - ${bet['amount']:,.2f}\n"
             else:
                 horses_info += "Bets: None\n"
                 
@@ -602,7 +602,7 @@ class HorseRaceManager:
         
         embed.add_field(
             name="Betting Info",
-            value=f"Min bet: {HORSE_RACE_MIN_BET:,} coins\nMax bet: {HORSE_RACE_MAX_BET:,} coins",
+            value=f"Min bet: ${HORSE_RACE_MIN_BET:,.2f}\nMax bet: ${HORSE_RACE_MAX_BET:,.2f}",
             inline=True
         )
         

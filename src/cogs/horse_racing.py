@@ -143,7 +143,7 @@ class HorseRacingCog(commands.Cog):
             user_balance = await self.currency_manager.get_balance(user_id)
             if user_balance < amount:
                 await interaction.response.send_message(
-                    f"❌ Insufficient funds! You have {user_balance:,} coins, need {amount:,}.",
+                    f"❌ Insufficient funds! You have ${user_balance:,.2f}, need {amount:,.2f}.",
                     ephemeral=True
                 )
                 return
@@ -165,7 +165,7 @@ class HorseRacingCog(commands.Cog):
                 new_balance = await self.currency_manager.get_balance(user_id)
                 embed.add_field(
                     name="Balance",
-                    value=f"{new_balance:,} coins remaining",
+                    value=f"${new_balance:,.2f} remaining",
                     inline=True
                 )
                 
@@ -206,7 +206,7 @@ class HorseRacingCog(commands.Cog):
             for bet in bets:
                 from src.config.settings import HORSE_STATS
                 horse_name = HORSE_STATS[bet["horse_id"] - 1]["name"]
-                bet_details.append(f"🐎 **{horse_name}** - {bet['amount']:,} coins")
+                bet_details.append(f"🐎 **{horse_name}** - {bet['amount']:,.2f}")
                 total_bet += bet['amount']
                 
             embed.add_field(
@@ -217,7 +217,7 @@ class HorseRacingCog(commands.Cog):
             
             embed.add_field(
                 name="Total Bet Amount",
-                value=f"{total_bet:,} coins",
+                value=f"{total_bet:,.2f}",
                 inline=True
             )
             
@@ -422,7 +422,7 @@ class HorseRacingCog(commands.Cog):
                         user = self.bot.get_user(int(user_id))
                         username = user.display_name if user else f"User {user_id}"
                         
-                        payout_text += f"💰 **{username}**: {payout_info['total_winnings']:,} coins\n"
+                        payout_text += f"💰 **{username}**: {payout_info['total_winnings']:,.2f}\n"
                         total_winnings += payout_info["total_winnings"]
                         
                 if payout_text:
@@ -433,7 +433,7 @@ class HorseRacingCog(commands.Cog):
                     )
                     embed.add_field(
                         name="Total Paid Out",
-                        value=f"{total_winnings:,} coins",
+                        value=f"{total_winnings:,.2f}",
                         inline=True
                     )
                 else:
