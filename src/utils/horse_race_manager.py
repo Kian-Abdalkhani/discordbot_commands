@@ -53,12 +53,20 @@ class Horse:
         
         # Add random variation (±10 seconds) to make races more interesting
         if not hasattr(self, 'target_finish_time'):
-            self.target_finish_time = base_finish_time + random.uniform(-HORSE_RANDOM_VARIATION, HORSE_RANDOM_VARIATION)
-            self.target_finish_time = max(60, min(120, self.target_finish_time))  # Clamp to 60-120 seconds
+            # Add main random variation in seconds
+            random_variation = random.uniform(-HORSE_RANDOM_VARIATION, HORSE_RANDOM_VARIATION)
+            self.target_finish_time = base_finish_time + random_variation
+            # Clamp to 60-120 seconds range first
+            self.target_finish_time = max(60.0, min(120.0, self.target_finish_time))
+            # Then add microsecond precision to prevent exact simultaneous finishes
+            microsecond_precision = random.uniform(0.001, 0.999)
+            self.target_finish_time += microsecond_precision
         
         # Check if horse should finish now
         if time_elapsed >= self.target_finish_time and not self.finished:
             self.finished = True
+            # Record the actual finish time (target time, not current elapsed time)
+            # This ensures horses that should have finished earlier get their proper finish time
             self.finish_time = self.target_finish_time
             self.position = HORSE_RACE_TRACK_LENGTH  # Horse reaches finish line
         elif not self.finished:
@@ -462,7 +470,8 @@ class HorseRaceManager:
         
     async def _finish_race(self, horses: List[Horse]):
         """Finish the race and calculate results based on finish times"""
-        # Sort horses by finish time (fastest wins)
+        # Sort horses by finish time (fastest wins) with microsecond precision
+        # Use h.finish_time (target finish time) for precise ordering, not processing order
         sorted_horses = sorted(horses, key=lambda h: h.finish_time or float('inf'))
         
         self.current_race["results"] = [
