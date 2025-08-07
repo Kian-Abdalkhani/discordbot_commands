@@ -67,7 +67,7 @@ HORSE_RACE_HOUSE_EDGE = 0.05  # 5% house edge on odds
 HORSE_RACE_DURATION = 90  # Race animation duration in seconds (1.5 minutes)
 HORSE_RACE_UPDATE_INTERVAL = 1.5  # Update race progress every 1.5 seconds for smoother animation
 HORSE_RACE_TRACK_LENGTH = 1200  # Track length in meters
-HORSE_RANDOM_VARIATION = 15 # The randomness factor; the higher, the more random race outputs are
+HORSE_RANDOM_VARIATION = 30 # The randomness factor; the higher, the more random race outputs are
 HORSE_RACE_BET_WINDOW = 48 # The number of hours that betting is open prior to the upcoming horse race
 
 # Bet Types Configuration
