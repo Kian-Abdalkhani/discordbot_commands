@@ -80,7 +80,7 @@ class BetTypeSelect(discord.ui.Select):
 class BetAmountView(discord.ui.View):
     """View containing the horse selection dropdown"""
     def __init__(self, amount: int, cog):
-        super().__init__(timeout=60)
+        super().__init__(timeout=300)
         self.amount = amount
         self.cog = cog
         self.add_item(HorseSelect(amount, cog))
@@ -98,7 +98,7 @@ class BetAmountView(discord.ui.View):
 class BetView(discord.ui.View):
     """View containing the bet type dropdown"""
     def __init__(self, horse_id: int, amount: int, cog):
-        super().__init__(timeout=60)
+        super().__init__(timeout=300)
         self.horse_id = horse_id
         self.amount = amount
         self.cog = cog
