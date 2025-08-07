@@ -64,10 +64,10 @@ HANGMAN_WORD_LISTS = {
 HORSE_RACE_MIN_BET = 100
 HORSE_RACE_MAX_BET = 1_000_000
 HORSE_RACE_HOUSE_EDGE = 0.05  # 5% house edge on odds
-HORSE_RACE_DURATION = 180  # Race animation duration in seconds (3 minutes) - allows for slowest possible horse (120s + 30s variation)
-HORSE_RACE_UPDATE_INTERVAL = 1.5  # Update race progress every 1.5 seconds for smoother animation
+HORSE_RACE_DURATION = 120  # Race animation duration in seconds (2 minutes) - dynamic system allows for more varied finish times
+HORSE_RACE_UPDATE_INTERVAL = 1.0  # Update race progress every 1 second for smoother animation
 HORSE_RACE_TRACK_LENGTH = 1200  # Track length in meters
-HORSE_RANDOM_VARIATION = 30 # The randomness factor; the higher, the more random race outputs are
+HORSE_RANDOM_VARIATION = 15 # Per-update randomness factor for dynamic racing (reduced from 30 since it's now applied continuously)
 HORSE_RACE_BET_WINDOW = 48 # The number of hours that betting is open prior to the upcoming horse race
 
 # Bet Types Configuration
@@ -115,7 +115,7 @@ HORSE_RACE_SCHEDULE = [
 # Horse Stats Configuration - 8 racing horses with varied stats (favorites to longshots)
 HORSE_STATS = [
     # Strong favorites (low odds, high stats)
-    {"name": "Lightning Bolt", "speed": 95, "stamina": 90, "acceleration": 92, "color": "⚡"},
+    {"name": "Lightning Bolt", "speed": 95, "stamina": 90, "acceleration": 92, "color": "⚡️"},
     {"name": "Thunder Strike", "speed": 92, "stamina": 88, "acceleration": 90, "color": "🌩️"},
     
     # Good contenders (medium odds)

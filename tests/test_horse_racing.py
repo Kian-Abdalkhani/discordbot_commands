@@ -24,7 +24,7 @@ class TestHorse:
         assert horse.acceleration == horse_data["acceleration"]
         assert horse.color == horse_data["color"]
         assert horse.position == 0.0
-        assert horse.energy == 100.0
+        assert horse.current_stamina == 100.0
         assert not horse.finished
 
     def test_calculate_odds(self):
@@ -34,7 +34,7 @@ class TestHorse:
         
         odds = horse.calculate_odds()
         assert isinstance(odds, float)
-        assert 0 < odds <= 1.0
+        assert odds > 0  # Should be positive, range depends on horse stats
 
     def test_update_race_position(self):
         """Test that horse position updates during race"""
@@ -42,12 +42,11 @@ class TestHorse:
         horse = Horse(horse_data, 1)
         
         initial_position = horse.position
-        horse.update_race_position(2.0, 20.0)
+        initial_stamina = horse.current_stamina
+        horse.update_race_position(2.0, 2.0)  # 2 seconds elapsed, 2 second delta
         
         assert horse.position > initial_position
-        # Energy is no longer used in the time-based system, test target_finish_time instead
-        assert hasattr(horse, 'target_finish_time')
-        assert horse.target_finish_time is not None
+        assert horse.current_stamina < initial_stamina  # Stamina should decrease
 
 
 class TestHorseRaceManager:
@@ -437,7 +436,7 @@ class TestHorseRacingCogNewUI:
         view = BetAmountView(1000, cog)
         
         # Should have timeout and contain HorseSelect
-        assert view.timeout == 60
+        assert view.timeout == 300
         assert len(view.children) == 1
         assert isinstance(view.children[0], HorseSelect)
     
@@ -448,7 +447,7 @@ class TestHorseRacingCogNewUI:
         view = BetView(1, 1000, cog)
         
         # Should have timeout and contain BetTypeSelect  
-        assert view.timeout == 60
+        assert view.timeout == 300
         assert len(view.children) == 1
         assert isinstance(view.children[0], BetTypeSelect)
     

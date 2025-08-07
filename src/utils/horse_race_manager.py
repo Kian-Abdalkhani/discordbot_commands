@@ -30,9 +30,15 @@ class Horse:
         # Race state
         self.position = 0.0
         self.current_speed = 0.0
-        self.energy = 100.0
+        self.current_stamina = 100.0
         self.finished = False
         self.finish_time = None
+        
+        # Dynamic racing attributes
+        self.base_speed = self.speed / 4.0  # Convert to meters per second base speed (increased for faster races)
+        self.speed_modifier = 1.0  # Current speed multiplier
+        self.last_surge_time = 0.0  # Track when last surge occurred
+        self.energy_depletion_rate = 100.0 / (60 + (self.stamina * 0.8))  # Stamina affects depletion rate
 
     def calculate_odds(self) -> float:
         """Calculate winning odds based on horse stats"""
@@ -40,44 +46,59 @@ class Horse:
         total_stat = (self.speed * 0.5) + (self.stamina * 0.3) + (self.acceleration * 0.2)
         return total_stat
 
-    def update_race_position(self, time_elapsed: float, total_race_time: float):
-        """Update horse position during race based on stats and randomness - time-based finish system"""
+    def update_race_position(self, time_elapsed: float, time_delta: float):
+        """Update horse position during race with dynamic racing mechanics"""
         if self.finished:
             return
             
-        # Calculate expected finish time based on horse stats (60-120 seconds range)
-        # Higher stats = faster finish time
-        total_stat = (self.speed * 0.5) + (self.stamina * 0.3) + (self.acceleration * 0.2)
-        # Base time between 60-120 seconds, with some randomness
-        base_finish_time = 120 - (total_stat / 100.0) * 60  # 120 - (0 to 60) = 60 to 120 seconds
+        # Update stamina depletion over time
+        stamina_loss = self.energy_depletion_rate * time_delta
+        self.current_stamina = max(0, self.current_stamina - stamina_loss)
         
-        # Add random variation (±10 seconds) to make races more interesting
-        if not hasattr(self, 'target_finish_time'):
-            # Add main random variation in seconds
-            random_variation = random.uniform(-HORSE_RANDOM_VARIATION, HORSE_RANDOM_VARIATION)
-            self.target_finish_time = base_finish_time + random_variation
-            # Clamp to 60-120 seconds range first
-            self.target_finish_time = max(60.0, min(120.0, self.target_finish_time))
-            # Then add microsecond precision to prevent exact simultaneous finishes
-            microsecond_precision = random.uniform(0.001, 0.999)
-            self.target_finish_time += microsecond_precision
+        # Calculate stamina effect on speed (horses slow down as they tire)
+        stamina_factor = 0.6 + (self.current_stamina / 100.0) * 0.4  # 60-100% of base speed
         
-        # Check if horse should finish now
-        if time_elapsed >= self.target_finish_time and not self.finished:
-            self.finished = True
-            # Record the actual finish time (target time, not current elapsed time)
-            # This ensures horses that should have finished earlier get their proper finish time
-            self.finish_time = self.target_finish_time
-            self.position = HORSE_RACE_TRACK_LENGTH  # Horse reaches finish line
-        elif not self.finished:
-            # Calculate position based on progress toward finish time
-            progress = min(time_elapsed / self.target_finish_time, 0.99)  # Don't show 100% until finished
-            self.position = progress * HORSE_RACE_TRACK_LENGTH
+        # Apply random variation continuously (smaller per-update variations)
+        random_factor = random.uniform(0.8, 1.2)  # ±20% random variation each update
+        
+        # Check for random surges/slumps (every 8-15 seconds on average)
+        if time_elapsed - self.last_surge_time > random.uniform(8.0, 15.0):
+            self.last_surge_time = time_elapsed
+            surge_roll = random.uniform(0, 1)
             
-            # Calculate current speed for display purposes
-            remaining_time = self.target_finish_time - time_elapsed
-            remaining_distance = HORSE_RACE_TRACK_LENGTH - self.position
-            self.current_speed = (remaining_distance / max(remaining_time, 0.1)) * 3.6 if remaining_time > 0 else 0
+            if surge_roll < 0.15:  # 15% chance for big surge
+                self.speed_modifier = random.uniform(1.4, 1.8)
+                logger.debug(f"{self.name} surge! Speed modifier: {self.speed_modifier:.2f}")
+            elif surge_roll < 0.25:  # 10% chance for slump
+                self.speed_modifier = random.uniform(0.5, 0.7)
+                logger.debug(f"{self.name} slump! Speed modifier: {self.speed_modifier:.2f}")
+            else:  # 75% chance to return to normal
+                self.speed_modifier = random.uniform(0.9, 1.1)
+        
+        # Calculate acceleration effect (matters more early in race)
+        race_progress = time_elapsed / 120.0  # Assume max 2 minute race for acceleration calc
+        acceleration_factor = 1.0 + (self.acceleration / 100.0) * (1 - race_progress) * 0.3
+        
+        # Calculate final speed in meters per second
+        effective_speed = (
+            self.base_speed * 
+            stamina_factor * 
+            random_factor * 
+            self.speed_modifier * 
+            acceleration_factor
+        )
+        
+        self.current_speed = effective_speed * 3.6  # Convert to km/h for display
+        
+        # Update position based on speed and time delta
+        distance_covered = effective_speed * time_delta
+        self.position += distance_covered
+        
+        # Check if horse finished
+        if self.position >= HORSE_RACE_TRACK_LENGTH and not self.finished:
+            self.finished = True
+            self.finish_time = time_elapsed
+            self.position = HORSE_RACE_TRACK_LENGTH
 
 class HorseRaceManager:
     """Manages horse racing events, betting, and payouts"""
@@ -454,13 +475,21 @@ class HorseRaceManager:
         horses = self.current_race["horses"]
         race_finished = False
         
-        # Update each horse's position
+        # Calculate time delta since last update
+        if not hasattr(self.current_race, "last_update_time"):
+            self.current_race["last_update_time"] = time_elapsed
+            time_delta = HORSE_RACE_UPDATE_INTERVAL  # Use default for first update
+        else:
+            time_delta = time_elapsed - self.current_race["last_update_time"]
+            self.current_race["last_update_time"] = time_elapsed
+        
+        # Update each horse's position with time delta
         for horse in horses:
-            horse.update_race_position(time_elapsed, HORSE_RACE_DURATION)
+            horse.update_race_position(time_elapsed, time_delta)
             
-        # Check if race is finished (all horses finished)
+        # Check if race is finished (all horses finished OR time limit exceeded)
         finished_horses = [h for h in horses if h.finished]
-        if len(finished_horses) == len(horses):
+        if len(finished_horses) == len(horses) or time_elapsed >= HORSE_RACE_DURATION:
             race_finished = True
             
         if race_finished and not self.current_race["finished"]:
@@ -647,12 +676,13 @@ class HorseRaceManager:
                         
                 status = f"{finish_emoji}({horse.finish_time:.1f}s)"
             else:
-                status = f"{horse.position:.1f}m"
+                # Show position and speed
+                status = f"{horse.position:.0f}m | {horse.current_speed:.0f}km/h"
             
             track_display += f"`{track_str}` - {status} **{horse.name}**\n"
             
         embed.add_field(
-            name="🏁 Race Track",
+            name="🏁 Race Track \n",
             value=track_display,
             inline=False
         )
