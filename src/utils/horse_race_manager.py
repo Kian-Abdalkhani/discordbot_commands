@@ -38,9 +38,7 @@ class Horse:
         """Calculate winning odds based on horse stats"""
         # Weighted combination of stats (speed most important, then stamina, then acceleration)
         total_stat = (self.speed * 0.5) + (self.stamina * 0.3) + (self.acceleration * 0.2)
-        # Normalize to probability (higher stats = higher probability)
-        base_probability = total_stat / 100.0
-        return base_probability
+        return total_stat
 
     def update_race_position(self, time_elapsed: float, total_race_time: float):
         """Update horse position during race based on stats and randomness - time-based finish system"""
@@ -253,10 +251,6 @@ class HorseRaceManager:
             if bet_type not in BET_TYPES:
                 logger.error(f"Invalid bet_type: {bet_type}")
                 bet_type = "win"  # Fallback to win
-                
-            bet_config = BET_TYPES[bet_type]
-            bet_multiplier = bet_config["payout_multiplier"]
-            logger.debug(f"Bet type {bet_type} multiplier: {bet_multiplier}")
             
             # Apply house edge more aggressively to create realistic odds
             odds = {}
@@ -265,14 +259,14 @@ class HorseRaceManager:
                 if bet_type == "place":
                     # For place bets, each horse has a chance to finish 1st OR 2nd
                     # Approximate this as roughly double the chance compared to win-only
-                    adjusted_prob = min(prob * 1.8, 0.9)  # Cap at 90%
+                    adjusted_prob = min(prob * 2, 0.9)  # Cap at 90%
                 elif bet_type == "show":
                     # For show bets, each horse has a chance to finish 1st, 2nd, OR 3rd
                     # Approximate this as roughly triple the chance compared to win-only
-                    adjusted_prob = min(prob * 2.5, 0.95)  # Cap at 95%
+                    adjusted_prob = min(prob * 3, 0.95)  # Cap at 95%
                 elif bet_type == "last":
                     # For last place, invert the probability (worst horse has best chance to finish last)
-                    adjusted_prob = 1 - prob
+                    adjusted_prob = abs(1 - prob) / (len(horses) - 1)
                 else:  # win
                     adjusted_prob = prob
                 
@@ -281,9 +275,6 @@ class HorseRaceManager:
                 
                 # Convert to payout odds (what player receives per $1 bet)
                 payout_multiplier = 1 / house_adjusted_prob if house_adjusted_prob > 0 else 50.0
-                
-                # Apply bet type multiplier
-                payout_multiplier *= bet_multiplier
                 
                 # Ensure minimum odds of 1.1 (slight profit) and maximum of 50 for longshots
                 payout_multiplier = max(1.1, min(50.0, payout_multiplier))
@@ -691,7 +682,7 @@ class HorseRaceManager:
         
         return embed
         
-    def create_betting_embed(self, horses: List[Horse], bot=None) -> discord.Embed:
+    def create_betting_embed(self, horses: List[Horse], bot=None, display_type: str = "stats") -> discord.Embed:
         """Create Discord embed for betting information with all bet types and odds shown under each horse"""
         embed = discord.Embed(
             title="🏇 Horse Racing - Place Your Bets! 🏇",
@@ -721,51 +712,69 @@ class HorseRaceManager:
                         'bet_type': bet_type
                     })
         
-        horses_info = ""
-        for horse in horses:
-            horses_info += f"{horse.color} **{horse.id}. {horse.name}**\n"
-            horses_info += f"Speed: {horse.speed} | Stamina: {horse.stamina} | Acceleration: {horse.acceleration}\n"
+        # Build content based on display_type
+        if display_type == "stats":
+            # Show only horse stats and odds (more concise)
+            horses_info = ""
+            for horse in horses:
+                horses_info += f"{horse.color} **{horse.id}. {horse.name}**\n"
+                horses_info += f"Speed:{horse.speed} | Stamina:{horse.stamina} | Acceleration:{horse.acceleration}\n"
+                horses_info += f"Win:{win_odds[horse.id]:.1f}x | Place:{place_odds[horse.id]:.1f}x | "
+                horses_info += f"Show:{show_odds[horse.id]:.1f}x | Last:{last_odds[horse.id]:.1f}x\n\n"
+
+            embed.add_field(
+                name="🐎 Horses & Odds",
+                value=horses_info,
+                inline=False
+            )
             
-            # Show odds for all bet types
-            horses_info += f"**Win** {win_odds[horse.id]:.1f}:1 | "
-            horses_info += f"**Place** {place_odds[horse.id]:.1f}:1 | "
-            horses_info += f"**Show** {show_odds[horse.id]:.1f}:1 | "
-            horses_info += f"**Last** {last_odds[horse.id]:.1f}:1\n"
-            
-            # Show bets for this horse grouped by bet type
-            if horse.id in horse_bets:
-                horses_info += "Bets:\n"
-                # Group bets by type
-                bet_types = {}
-                for bet in horse_bets[horse.id]:
-                    bet_type = bet['bet_type']
-                    if bet_type not in bet_types:
-                        bet_types[bet_type] = []
-                    bet_types[bet_type].append(bet)
+        elif display_type == "bets":
+            # Show only current bets (truncate if too long)
+            if horse_bets:
+                bets_info = ""
+                for horse in horses:
+                    if horse.id in horse_bets:
+                        bets_info += f"{horse.color} **{horse.name}**\n"
+                        
+                        # Group bets by type
+                        bet_types = {}
+                        for bet in horse_bets[horse.id]:
+                            bet_type = bet['bet_type']
+                            if bet_type not in bet_types:
+                                bet_types[bet_type] = []
+                            bet_types[bet_type].append(bet)
+                        
+                        for bet_type, type_bets in bet_types.items():
+                            bet_name = BET_TYPES[bet_type]['name']
+                            bets_info += f"  {bet_name}: "
+                            bet_strings = []
+                            for bet in type_bets:
+                                # Get username from bot if available
+                                if bot:
+                                    user = bot.get_user(int(bet['user_id']))
+                                    username = user.display_name if user else f"User {bet['user_id'][-4:]}"
+                                else:
+                                    username = f"User {bet['user_id'][-4:]}"
+                                bet_strings.append(f"{username} ${bet['amount']:,.2f}")
+                            bets_info += ", ".join(bet_strings) + "\n"
+                        bets_info += "\n"
+                        
+                        # Check if we're getting close to the character limit
+                        if len(bets_info) > 900:
+                            bets_info += "... (truncated due to length)"
+                            break
                 
-                for bet_type, type_bets in bet_types.items():
-                    bet_name = BET_TYPES[bet_type]['name']
-                    horses_info += f"  {bet_name}: "
-                    bet_strings = []
-                    for bet in type_bets:
-                        # Get username from bot if available
-                        if bot:
-                            user = bot.get_user(int(bet['user_id']))
-                            username = user.display_name if user else f"User {bet['user_id'][-4:]}"
-                        else:
-                            username = f"User {bet['user_id'][-4:]}"
-                        bet_strings.append(f"{username} ${bet['amount']:,.2f}")
-                    horses_info += ", ".join(bet_strings) + "\n"
+                embed.add_field(
+                    name="🎰 Current Bets",
+                    value=bets_info if bets_info else "No bets placed yet.",
+                    inline=False
+                )
             else:
-                horses_info += "Bets: None\n"
-                
-            horses_info += "\n"
-            
-        embed.add_field(
-            name="Horses & Odds",
-            value=horses_info,
-            inline=False
-        )
+                embed.add_field(
+                    name="🎰 Current Bets",
+                    value="No bets placed yet.",
+                    inline=False
+                )
         
         # Add bet type explanations
         bet_explanations = ""

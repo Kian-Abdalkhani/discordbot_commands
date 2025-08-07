@@ -177,8 +177,15 @@ class HorseRacingCog(commands.Cog):
         await self.bot.wait_until_ready()
 
     @app_commands.command(name="horserace_info", description="Show horse race information and current bets")
-    async def horserace_info(self, interaction: discord.Interaction):
-        await self.show_race_info(interaction)
+    @app_commands.describe(
+        display_type="Choose what to display"
+    )
+    @app_commands.choices(display_type=[
+        app_commands.Choice(name="Horse Stats & Odds", value="stats"),
+        app_commands.Choice(name="Current Bets", value="bets")
+    ])
+    async def horserace_info(self, interaction: discord.Interaction, display_type: str):
+        await self.show_race_info(interaction, display_type)
         
     @app_commands.command(name="horserace_bet", description="Place a bet on a horse")
     @app_commands.describe(
@@ -195,11 +202,11 @@ class HorseRacingCog(commands.Cog):
     async def horserace_schedule(self, interaction: discord.Interaction):
         await self.show_race_schedule(interaction)
             
-    async def show_race_info(self, interaction: discord.Interaction):
+    async def show_race_info(self, interaction: discord.Interaction, display_type: str):
         """Show current race information, betting odds, and all open bets"""
         try:
             horses = await self.horse_race_manager.get_current_horses()
-            embed = self.horse_race_manager.create_betting_embed(horses, self.bot)
+            embed = self.horse_race_manager.create_betting_embed(horses, self.bot, display_type)
             
             if self.horse_race_manager.race_in_progress:
                 # Create new embed for race in progress
@@ -210,7 +217,7 @@ class HorseRacingCog(commands.Cog):
                     timestamp=embed.timestamp
                 )
                 # Copy original embed fields
-                original_embed = self.horse_race_manager.create_betting_embed(horses, self.bot)
+                original_embed = self.horse_race_manager.create_betting_embed(horses, self.bot, display_type)
                 for field in original_embed.fields:
                     embed.add_field(name=field.name, value=field.value, inline=field.inline)
             elif not self.horse_race_manager.is_betting_time():
@@ -222,11 +229,9 @@ class HorseRacingCog(commands.Cog):
                     timestamp=embed.timestamp
                 )
                 # Copy original embed fields
-                original_embed = self.horse_race_manager.create_betting_embed(horses, self.bot)
+                original_embed = self.horse_race_manager.create_betting_embed(horses, self.bot, display_type)
                 for field in original_embed.fields:
                     embed.add_field(name=field.name, value=field.value, inline=field.inline)
-                
-            # Bets are now shown directly under each horse in the embed
                 
             await interaction.response.send_message(embed=embed)
             
