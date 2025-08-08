@@ -124,9 +124,28 @@ class HorseRacingCog(commands.Cog):
         self.current_race_message = None
         self.race_start_time = None
         
+    async def _validate_channel_config(self):
+        """Validate that the horse race channel is properly configured"""
+        if not HORSE_RACE_CHANNEL_ID:
+            logger.error("HORSE_RACE_CHANNEL_ID is not set in environment variables!")
+            return
+            
+        guild = self.bot.get_guild(GUILD_ID)
+        if not guild:
+            logger.error(f"Could not find guild with ID {GUILD_ID}")
+            return
+            
+        channel = guild.get_channel(HORSE_RACE_CHANNEL_ID)
+        if not channel:
+            logger.error(f"Could not find channel with ID {HORSE_RACE_CHANNEL_ID} in guild {guild.name}")
+            return
+            
+        logger.info(f"Horse race channel validated: #{channel.name} ({channel.id}) in {guild.name}")
+        
     async def cog_load(self):
         """Called when the cog is loaded"""
         await self.horse_race_manager.initialize()
+        await self._validate_channel_config()
         self.check_race_schedule.start()
         logger.info("Horse Racing Cog loaded successfully")
 
@@ -140,10 +159,14 @@ class HorseRacingCog(commands.Cog):
     async def check_race_schedule(self):
         """Check if it's time to start a scheduled race"""
         try:
+            logger.debug("Running race schedule check...")
+            
             if self.horse_race_manager.race_in_progress:
+                logger.debug("Race already in progress, skipping schedule check")
                 return  # Skip check if race already in progress
                 
             now = datetime.now()
+            logger.debug(f"Current time: {now.strftime('%Y-%m-%d %H:%M:%S')} (weekday: {now.weekday()})")
             
             # Check all scheduled race times
             for race_config in HORSE_RACE_SCHEDULE:
@@ -153,23 +176,34 @@ class HorseRacingCog(commands.Cog):
                 
                 # Calculate the race time for today
                 today_race_time = now.replace(hour=race_hour, minute=race_minute, second=0, microsecond=0)
+                time_diff = (now - today_race_time).total_seconds()
+                
+                logger.debug(f"Checking race config: day {race_day}, {race_hour:02d}:{race_minute:02d}")
+                logger.debug(f"Today is weekday {now.weekday()}, race is on weekday {race_day}")
+                logger.debug(f"Time difference: {time_diff:.1f} seconds")
                 
                 # Check if today matches the race day and it's time for the race
+                # Allow a 10-minute window and ensure we haven't passed the time by more than 5 minutes
                 if (now.weekday() == race_day and 
-                    abs((now - today_race_time).total_seconds()) <= 300):  # Within 5 minutes
+                    -300 <= time_diff <= 600):  # 5 minutes before to 10 minutes after scheduled time
                     
                     # Find the general channel to announce the race
                     guild = self.bot.get_guild(GUILD_ID)
-                    if guild:
-                        # Set the channel that the horse race starts in
-                        channel = HORSE_RACE_CHANNEL_ID
+                    if guild and HORSE_RACE_CHANNEL_ID:
+                        # Get the actual channel object from the channel ID
+                        channel = guild.get_channel(HORSE_RACE_CHANNEL_ID)
                         
                         if channel:
+                            logger.info(f"Starting scheduled race in channel: {channel.name} ({channel.id})")
                             await self.start_scheduled_race(channel)
                             return  # Start only one race at a time
+                        else:
+                            logger.error(f"Could not find channel with ID {HORSE_RACE_CHANNEL_ID}")
+                    else:
+                        logger.error("Guild not found or HORSE_RACE_CHANNEL_ID not set")
                         
         except Exception as e:
-            logger.error(f"Error in race schedule check: {e}")
+            logger.error(f"Error in race schedule check: {e}", exc_info=True)
             
     @check_race_schedule.before_loop
     async def before_check_race_schedule(self):
@@ -201,6 +235,78 @@ class HorseRacingCog(commands.Cog):
     @app_commands.command(name="horserace_schedule", description="Show the schedule for the next 3 horse races")
     async def horserace_schedule(self, interaction: discord.Interaction):
         await self.show_race_schedule(interaction)
+        
+    @app_commands.command(name="horserace_debug", description="Show debug info for race scheduling (admin only)")
+    async def horserace_debug(self, interaction: discord.Interaction):
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("❌ Only administrators can use this command!", ephemeral=True)
+            return
+            
+        await self.show_debug_info(interaction)
+    
+    async def show_debug_info(self, interaction: discord.Interaction):
+        """Show debug information about race scheduling"""
+        try:
+            now = datetime.now()
+            next_race = self.horse_race_manager.get_next_race_time()
+            time_until_race = (next_race - now).total_seconds()
+            
+            embed = discord.Embed(
+                title="🔍 Horse Race Debug Info",
+                description="Debug information for race scheduling",
+                color=0xff9900
+            )
+            
+            # Current time and status
+            embed.add_field(
+                name="Current Status",
+                value=f"Current time: {now.strftime('%Y-%m-%d %H:%M:%S')}\n"
+                      f"Current weekday: {now.weekday()} ({['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][now.weekday()]})\n"
+                      f"Race in progress: {self.horse_race_manager.race_in_progress}\n"
+                      f"Channel ID: {HORSE_RACE_CHANNEL_ID}",
+                inline=False
+            )
+            
+            # Next race info
+            embed.add_field(
+                name="Next Race",
+                value=f"Scheduled: {next_race.strftime('%Y-%m-%d %H:%M:%S')}\n"
+                      f"Time until: {time_until_race/3600:.1f} hours\n"
+                      f"Betting open: {self.horse_race_manager.is_betting_time()}",
+                inline=False
+            )
+            
+            # Schedule configuration
+            schedule_text = ""
+            for i, race_config in enumerate(HORSE_RACE_SCHEDULE):
+                day_name = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][race_config['day']]
+                schedule_text += f"{i+1}. {day_name} {race_config['hour']:02d}:{race_config['minute']:02d}\n"
+            
+            embed.add_field(
+                name="Race Schedule",
+                value=schedule_text,
+                inline=False
+            )
+            
+            # Channel validation
+            guild = self.bot.get_guild(GUILD_ID)
+            if guild and HORSE_RACE_CHANNEL_ID:
+                channel = guild.get_channel(HORSE_RACE_CHANNEL_ID)
+                channel_status = f"✅ #{channel.name}" if channel else "❌ Channel not found"
+            else:
+                channel_status = "❌ Guild or channel ID not configured"
+                
+            embed.add_field(
+                name="Channel Status",
+                value=channel_status,
+                inline=True
+            )
+            
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            
+        except Exception as e:
+            logger.error(f"Error showing debug info: {e}")
+            await interaction.response.send_message("❌ Error retrieving debug info!", ephemeral=True)
             
     async def show_race_info(self, interaction: discord.Interaction, display_type: str):
         """Show current race information, betting odds, and all open bets"""
@@ -742,7 +848,7 @@ class HorseRacingCog(commands.Cog):
         except Exception as e:
             logger.error(f"Error starting scheduled race: {e}")
             
-    async def start_race_in_channel(self, channel = HORSE_RACE_CHANNEL_ID):
+    async def start_race_in_channel(self, channel):
         """Start a race in the specified channel with animation"""
         try:
             # Start the race

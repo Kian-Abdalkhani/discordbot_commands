@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-GUILD_ID = int(os.getenv("GUILD_ID"))
+GUILD_ID = int(os.getenv("GUILD_ID")) if os.getenv("GUILD_ID") else None
 
 # Daily payout
 DAILY_CLAIM = 10_000
@@ -100,7 +100,7 @@ BET_TYPES = {
 HORSE_RACE_ALLOW_ADMIN_START = True
 
 # Set horse race channel id
-HORSE_RACE_CHANNEL_ID = os.getenv("HORSE_RACE_CHANNEL_ID")
+HORSE_RACE_CHANNEL_ID = int(os.getenv("HORSE_RACE_CHANNEL_ID")) if os.getenv("HORSE_RACE_CHANNEL_ID") else None
 
 # Horse race schedule configuration
 # IMPORTANT: All times are in the system's local timezone. For Docker deployments,
