@@ -67,7 +67,7 @@ HORSE_RACE_HOUSE_EDGE = 0.05  # 5% house edge on odds
 HORSE_RACE_DURATION = 120  # Race animation duration in seconds (2 minutes) - dynamic system allows for more varied finish times
 HORSE_RACE_UPDATE_INTERVAL = 1.0  # Update race progress every 1 second for smoother animation
 HORSE_RACE_TRACK_LENGTH = 1200  # Track length in meters
-HORSE_RANDOM_VARIATION = 50 # Per-update randomness factor for dynamic racing
+HORSE_RANDOM_VARIATION = 60 # Per-update randomness factor for dynamic racing
 HORSE_RACE_BET_WINDOW = 48 # The number of hours that betting is open prior to the upcoming horse race
 
 # Bet Types Configuration
@@ -128,5 +128,5 @@ HORSE_STATS = [
     
     # Longshots (high odds, lower stats)
     {"name": "Golden Arrow", "speed": 75, "stamina": 78, "acceleration": 72, "color": "🏹"},
-    {"name": "Shadow Dash", "speed": 72, "stamina": 74, "acceleration": 70, "color": "👤"}
+    {"name": "Shadow Dash", "speed": 74, "stamina": 76, "acceleration": 73, "color": "👤"}
 ]
