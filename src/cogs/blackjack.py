@@ -551,9 +551,11 @@ class BlackjackCog(commands.Cog):
             else:
                 await interaction.response.send_message(f"{user.display_name} hasn't played any blackjack games yet.")
         else:
-            # Show stats for all users
+            # Show stats for all users - defer response to prevent timeout
+            await interaction.response.defer()
+            
             if not self.player_stats:
-                await interaction.response.send_message("No blackjack games have been played yet.")
+                await interaction.followup.send("No blackjack games have been played yet.")
                 return
 
             embed = discord.Embed(
@@ -592,7 +594,7 @@ class BlackjackCog(commands.Cog):
                     inline=False
                 )
 
-            await interaction.response.send_message(embed=embed)
+            await interaction.followup.send(embed=embed)
 
 
 async def setup(bot):

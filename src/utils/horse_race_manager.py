@@ -58,22 +58,31 @@ class Horse:
         # Calculate stamina effect on speed (horses slow down as they tire)
         stamina_factor = 0.6 + (self.current_stamina / 100.0) * 0.4  # 60-100% of base speed
         
-        # Apply random variation continuously (smaller per-update variations)
-        random_factor = random.uniform(0.8, 1.2)  # ±20% random variation each update
+        # Apply random variation continuously using HORSE_RANDOM_VARIATION setting
+        variation_range = HORSE_RANDOM_VARIATION / 100.0  # Convert percentage to decimal
+        min_factor = 1.0 - variation_range
+        max_factor = 1.0 + variation_range
+        random_factor = random.uniform(min_factor, max_factor)
         
         # Check for random surges/slumps (every 8-15 seconds on average)
         if time_elapsed - self.last_surge_time > random.uniform(8.0, 15.0):
             self.last_surge_time = time_elapsed
             surge_roll = random.uniform(0, 1)
             
+            # Scale surge/slump intensity based on HORSE_RANDOM_VARIATION
+            surge_intensity = HORSE_RANDOM_VARIATION / 100.0
+            base_surge_max = 1.0 + (surge_intensity * 2.0)  # Higher variation = bigger surges
+            base_surge_min = max(0.3, 1.0 - (surge_intensity * 1.5))  # Higher variation = deeper slumps
+            normal_range = surge_intensity * 0.5  # Normal variation range
+            
             if surge_roll < 0.15:  # 15% chance for big surge
-                self.speed_modifier = random.uniform(1.4, 1.8)
+                self.speed_modifier = random.uniform(1.2, base_surge_max)
                 logger.debug(f"{self.name} surge! Speed modifier: {self.speed_modifier:.2f}")
             elif surge_roll < 0.25:  # 10% chance for slump
-                self.speed_modifier = random.uniform(0.5, 0.7)
+                self.speed_modifier = random.uniform(base_surge_min, 0.8)
                 logger.debug(f"{self.name} slump! Speed modifier: {self.speed_modifier:.2f}")
             else:  # 75% chance to return to normal
-                self.speed_modifier = random.uniform(0.9, 1.1)
+                self.speed_modifier = random.uniform(1.0 - normal_range, 1.0 + normal_range)
         
         # Calculate acceleration effect (matters more early in race)
         race_progress = time_elapsed / 120.0  # Assume max 2 minute race for acceleration calc
