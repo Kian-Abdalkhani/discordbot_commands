@@ -360,6 +360,91 @@ class HorseRaceManager:
             # Return default odds as fallback
             return {i + 1: 2.0 for i in range(len(horses))}
         
+    def calculate_potential_winnings(self, horses: List[Horse], horse_id: int, amount: int, bet_type: str = "win") -> int:
+        """Calculate potential winnings for a specific bet"""
+        try:
+            odds = self.calculate_payout_odds(horses, bet_type)
+            if horse_id in odds:
+                return int(amount * odds[horse_id])
+            return 0
+        except Exception as e:
+            logger.error(f"Error calculating potential winnings: {e}")
+            return 0
+            
+    async def validate_bet(self, user_id: str, horse_id: int, amount: int, bet_type: str = "win") -> Tuple[bool, str]:
+        """Validate a bet without placing it"""
+        try:
+            if not self.is_betting_time():
+                return False, "Betting is not currently open!"
+                
+            if amount < HORSE_RACE_MIN_BET:
+                return False, f"Minimum bet is ${HORSE_RACE_MIN_BET:,.2f}!"
+                
+            if amount > HORSE_RACE_MAX_BET:
+                return False, f"Maximum bet is ${HORSE_RACE_MAX_BET:,.2f}!"
+                
+            if horse_id < 1 or horse_id > len(HORSE_STATS):
+                return False, f"Invalid horse ID! Choose 1-{len(HORSE_STATS)}"
+                
+            if bet_type not in BET_TYPES:
+                return False, f"Invalid bet type! Choose from: {', '.join(BET_TYPES.keys())}"
+                
+            return True, "Bet is valid"
+            
+        except Exception as e:
+            logger.error(f"Error validating bet: {e}")
+            return False, "Error validating bet"
+            
+    async def place_multiple_bets(self, user_id: str, bets: List[Dict]) -> Tuple[List[Dict], List[Dict]]:
+        """Place multiple bets in a batch operation"""
+        successful_bets = []
+        failed_bets = []
+        
+        try:
+            logger.info(f"Processing batch bet placement for user {user_id} with {len(bets)} bets")
+            
+            # Load current bets
+            await self.load_current_bets()
+            
+            # Validate all bets first
+            for i, bet in enumerate(bets):
+                horse_id = bet.get('horse_id')
+                amount = bet.get('amount')
+                bet_type = bet.get('bet_type', 'win')
+                
+                is_valid, error_message = await self.validate_bet(user_id, horse_id, amount, bet_type)
+                
+                if not is_valid:
+                    failed_bets.append({
+                        'bet': bet,
+                        'error': error_message,
+                        'index': i
+                    })
+                    continue
+                
+                # If validation passes, place the bet
+                success, message = await self.place_bet(user_id, horse_id, amount, bet_type)
+                
+                if success:
+                    successful_bets.append(bet)
+                    logger.debug(f"Batch bet {i+1} successful: {message}")
+                else:
+                    failed_bets.append({
+                        'bet': bet,
+                        'error': message,
+                        'index': i
+                    })
+                    logger.warning(f"Batch bet {i+1} failed: {message}")
+            
+            logger.info(f"Batch betting completed for user {user_id}: {len(successful_bets)} successful, {len(failed_bets)} failed")
+            return successful_bets, failed_bets
+            
+        except Exception as e:
+            logger.error(f"Error in batch bet placement for user {user_id}: {e}", exc_info=True)
+            # Return all bets as failed if there's a system error
+            failed_bets = [{'bet': bet, 'error': 'System error during batch processing', 'index': i} for i, bet in enumerate(bets)]
+            return [], failed_bets
+        
     async def place_bet(self, user_id: str, horse_id: int, amount: int, bet_type: str = "win") -> Tuple[bool, str]:
         """Place a bet on a horse with specified bet type"""
         try:

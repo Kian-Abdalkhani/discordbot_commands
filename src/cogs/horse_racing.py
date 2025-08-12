@@ -114,6 +114,1104 @@ class BetView(discord.ui.View):
         except Exception as e:
             logger.error(f"Error in BetView timeout handler: {e}")
 
+class MultiBetModal(discord.ui.Modal):
+    """Modal for comprehensive multi-betting interface"""
+    def __init__(self, cog):
+        super().__init__(title="🏇 Multi-Horse Betting", timeout=600)
+        self.cog = cog
+        self.configured_bets = {}  # {horse_id: {bet_type: amount}}
+        
+        # Add text inputs for horse betting amounts
+        self.horse_inputs = []
+        # Discord modals are limited to 5 components, so show top 5 horses
+        max_horses = min(5, len(HORSE_STATS))
+        for i, horse_stat in enumerate(HORSE_STATS[:max_horses], 1):
+            input_field = discord.ui.TextInput(
+                label=f"{horse_stat['name']} {horse_stat['color']} - Win Bet",
+                placeholder="Enter amount (e.g., 1000) or leave blank",
+                required=False,
+                max_length=10
+            )
+            self.add_item(input_field)
+            self.horse_inputs.append(input_field)
+            
+    async def on_submit(self, interaction: discord.Interaction):
+        """Process the multi-bet submission"""
+        try:
+            user_id = str(interaction.user.id)
+            logger.info(f"Processing multi-bet submission for user {user_id}")
+            
+            # Parse bet inputs
+            parsed_bets = []
+            total_bet_amount = 0
+            
+            for i, input_field in enumerate(self.horse_inputs):
+                if input_field.value.strip():
+                    try:
+                        amount = int(input_field.value.strip())
+                        if amount > 0:
+                            horse_id = i + 1
+                            parsed_bets.append({
+                                'horse_id': horse_id,
+                                'amount': amount,
+                                'bet_type': 'win'  # Default to win bets for now
+                            })
+                            total_bet_amount += amount
+                    except ValueError:
+                        await interaction.response.send_message(
+                            f"❌ Invalid amount for {HORSE_STATS[i]['name']}: '{input_field.value}'. Please enter a valid number.",
+                            ephemeral=True
+                        )
+                        return
+            
+            if not parsed_bets:
+                await interaction.response.send_message(
+                    "❌ No bets were configured. Please enter at least one bet amount.",
+                    ephemeral=True
+                )
+                return
+            
+            # Check if user has enough currency for total bet
+            user_balance = await self.cog.currency_manager.get_balance(user_id)
+            if user_balance < total_bet_amount:
+                await interaction.response.send_message(
+                    f"❌ Insufficient funds! You have ${user_balance:,.2f}, need ${total_bet_amount:,.2f}.",
+                    ephemeral=True
+                )
+                return
+            
+            # Check betting conditions
+            if not self.cog.horse_race_manager.is_betting_time():
+                await interaction.response.send_message("❌ Betting is not currently open!", ephemeral=True)
+                return
+                
+            if self.cog.horse_race_manager.race_in_progress:
+                await interaction.response.send_message("❌ Race is in progress, betting is closed!", ephemeral=True)
+                return
+            
+            # Process all bets
+            successful_bets = []
+            failed_bets = []
+            total_deducted = 0
+            
+            for bet in parsed_bets:
+                success, message = await self.cog.horse_race_manager.place_bet(
+                    user_id, bet['horse_id'], bet['amount'], bet['bet_type']
+                )
+                
+                if success:
+                    successful_bets.append(bet)
+                    total_deducted += bet['amount']
+                else:
+                    failed_bets.append({'bet': bet, 'error': message})
+            
+            if successful_bets:
+                # Deduct currency for successful bets
+                await self.cog.currency_manager.subtract_currency(user_id, total_deducted)
+                
+                # Create success response
+                embed = discord.Embed(
+                    title="✅ Multi-Bet Placed Successfully!",
+                    color=0x00ff00
+                )
+                
+                bet_summary = ""
+                for bet in successful_bets:
+                    horse_name = HORSE_STATS[bet['horse_id'] - 1]['name']
+                    bet_type_name = BET_TYPES[bet['bet_type']]['name']
+                    bet_summary += f"• {horse_name}: ${bet['amount']:,.2f} ({bet_type_name})\n"
+                
+                embed.add_field(
+                    name="Successful Bets",
+                    value=bet_summary,
+                    inline=False
+                )
+                
+                embed.add_field(
+                    name="Total Bet Amount",
+                    value=f"${total_deducted:,.2f}",
+                    inline=True
+                )
+                
+                new_balance = await self.cog.currency_manager.get_balance(user_id)
+                embed.add_field(
+                    name="Remaining Balance",
+                    value=f"${new_balance:,.2f}",
+                    inline=True
+                )
+                
+                if failed_bets:
+                    failed_summary = ""
+                    for failed in failed_bets:
+                        horse_name = HORSE_STATS[failed['bet']['horse_id'] - 1]['name']
+                        failed_summary += f"• {horse_name}: {failed['error']}\n"
+                    
+                    embed.add_field(
+                        name="❌ Failed Bets",
+                        value=failed_summary,
+                        inline=False
+                    )
+                
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                logger.info(f"Multi-bet successfully processed for user {user_id}: {len(successful_bets)} successful, {len(failed_bets)} failed")
+            else:
+                # All bets failed
+                error_summary = ""
+                for failed in failed_bets:
+                    horse_name = HORSE_STATS[failed['bet']['horse_id'] - 1]['name']
+                    error_summary += f"• {horse_name}: {failed['error']}\n"
+                
+                await interaction.response.send_message(
+                    f"❌ All bets failed:\n{error_summary}",
+                    ephemeral=True
+                )
+                
+        except Exception as e:
+            logger.error(f"Error processing multi-bet submission: {e}", exc_info=True)
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(
+                        "❌ Error processing your bets. Please try again!",
+                        ephemeral=True
+                    )
+                else:
+                    await interaction.followup.send(
+                        "❌ Error processing your bets. Please try again!",
+                        ephemeral=True
+                    )
+            except Exception as error_response_error:
+                logger.error(f"Failed to send error response: {error_response_error}")
+
+class CleanMultiBetView(discord.ui.View):
+    """Clean interface for selecting bet type and placing multiple bets"""
+    def __init__(self, cog):
+        super().__init__(timeout=600)
+        self.cog = cog
+        
+    @discord.ui.button(label="🏆 Win", style=discord.ButtonStyle.primary, row=0)
+    async def win_bets(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Open Win betting modal for all horses"""
+        modal = BetTypeModal(self.cog, "win")
+        await interaction.response.send_modal(modal)
+        
+    @discord.ui.button(label="🥈 Place", style=discord.ButtonStyle.primary, row=0) 
+    async def place_bets(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Open Place betting modal for all horses"""
+        modal = BetTypeModal(self.cog, "place")
+        await interaction.response.send_modal(modal)
+        
+    @discord.ui.button(label="🥉 Show", style=discord.ButtonStyle.primary, row=1)
+    async def show_bets(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Open Show betting modal for all horses"""
+        modal = BetTypeModal(self.cog, "show")
+        await interaction.response.send_modal(modal)
+        
+    @discord.ui.button(label="🎯 Last", style=discord.ButtonStyle.primary, row=1)
+    async def last_bets(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Open Last Place betting modal for all horses"""
+        modal = BetTypeModal(self.cog, "last")
+        await interaction.response.send_modal(modal)
+
+class BetTypeModal(discord.ui.Modal):
+    """Modal for placing bets on all horses for a specific bet type"""
+    def __init__(self, cog, bet_type):
+        bet_config = BET_TYPES[bet_type]
+        super().__init__(title=f"🏇 {bet_config['name']} Bets - All Horses", timeout=600)
+        self.cog = cog
+        self.bet_type = bet_type
+        
+        # Add text inputs for all 8 horses (Discord modal limit is 5, so show first 5)
+        self.horse_inputs = []
+        max_horses = min(5, len(HORSE_STATS))  # Discord modal limitation
+        
+        for i in range(max_horses):
+            horse_stat = HORSE_STATS[i]
+            horse_num = i + 1
+            
+            input_field = discord.ui.TextInput(
+                label=f"{horse_num}. {horse_stat['name']} {horse_stat['color']}",
+                placeholder="Enter bet amount (e.g., 1000) or leave blank",
+                required=False,
+                max_length=10,
+                style=discord.TextStyle.short
+            )
+            self.add_item(input_field)
+            self.horse_inputs.append(input_field)
+            
+        # Add note about remaining horses if there are more than 5
+        if len(HORSE_STATS) > 5:
+            note_field = discord.ui.TextInput(
+                label="⚠️ More horses available after submission",
+                placeholder="This modal shows first 5 horses. Submit to continue with remaining horses.",
+                required=False,
+                max_length=1,
+                style=discord.TextStyle.short
+            )
+            # Remove one horse input to make room for the note
+            self.remove_item(self.horse_inputs[-1])
+            self.horse_inputs.pop()
+            self.add_item(note_field)
+            
+    async def on_submit(self, interaction: discord.Interaction):
+        """Process bet submission for this bet type"""
+        try:
+            user_id = str(interaction.user.id)
+            logger.info(f"Processing {self.bet_type} bets for user {user_id}")
+            
+            # Parse bet inputs
+            parsed_bets = []
+            total_bet_amount = 0
+            parse_errors = []
+            
+            for i, input_field in enumerate(self.horse_inputs):
+                if input_field.value.strip():
+                    horse_id = i + 1
+                    
+                    try:
+                        amount = int(input_field.value.strip())
+                        if amount > 0:
+                            parsed_bets.append({
+                                'horse_id': horse_id,
+                                'amount': amount,
+                                'bet_type': self.bet_type
+                            })
+                            total_bet_amount += amount
+                    except ValueError:
+                        horse_name = HORSE_STATS[i]['name']
+                        parse_errors.append(f"{horse_name}: Invalid amount '{input_field.value}'. Please enter a valid number.")
+            
+            # Show parse errors if any
+            if parse_errors:
+                error_msg = "❌ **Input Errors:**\n" + "\n".join([f"• {error}" for error in parse_errors])
+                if parsed_bets:
+                    error_msg += f"\n\n✅ {len(parsed_bets)} valid bets found."
+                
+                # If there are more horses and some valid bets, offer to continue
+                if len(HORSE_STATS) > len(self.horse_inputs) and parsed_bets:
+                    error_msg += f"\n\n⏭️ **Continue with remaining horses?**"
+                    view = ContinueBettingView(self.cog, self.bet_type, parsed_bets, total_bet_amount)
+                    await interaction.response.send_message(error_msg, view=view, ephemeral=True)
+                else:
+                    await interaction.response.send_message(error_msg, ephemeral=True)
+                return
+            
+            if not parsed_bets:
+                # No bets for this set, but check if there are more horses
+                if len(HORSE_STATS) > len(self.horse_inputs):
+                    embed = discord.Embed(
+                        title=f"Continue with {BET_TYPES[self.bet_type]['name']} Bets?",
+                        description=f"No bets entered for horses 1-{len(self.horse_inputs)}.\nContinue with horses {len(self.horse_inputs)+1}-{len(HORSE_STATS)}?",
+                        color=0x0099ff
+                    )
+                    view = ContinueBettingView(self.cog, self.bet_type, [], 0)
+                    await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+                else:
+                    await interaction.response.send_message(
+                        f"❌ No {BET_TYPES[self.bet_type]['name']} bets entered. Please enter at least one bet amount.",
+                        ephemeral=True
+                    )
+                return
+            
+            # If there are more horses, show continue option
+            if len(HORSE_STATS) > len(self.horse_inputs):
+                embed = discord.Embed(
+                    title=f"✅ {len(parsed_bets)} {BET_TYPES[self.bet_type]['name']} Bets Configured",
+                    description=(
+                        f"**Current Bets:** ${total_bet_amount:,.2f} total\n\n"
+                        f"Continue with horses {len(self.horse_inputs)+1}-{len(HORSE_STATS)} or submit current bets?"
+                    ),
+                    color=0x0099ff
+                )
+                
+                bet_summary = ""
+                for bet in parsed_bets:
+                    horse_name = HORSE_STATS[bet['horse_id'] - 1]['name']
+                    horse_color = HORSE_STATS[bet['horse_id'] - 1]['color']
+                    bet_summary += f"• {horse_color} {horse_name}: ${bet['amount']:,.2f}\n"
+                
+                embed.add_field(
+                    name="Current Bets",
+                    value=bet_summary,
+                    inline=False
+                )
+                
+                view = ContinueBettingView(self.cog, self.bet_type, parsed_bets, total_bet_amount)
+                await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            else:
+                # Process all bets (all horses covered)
+                await self._process_final_bets(interaction, parsed_bets, total_bet_amount)
+                
+        except Exception as e:
+            logger.error(f"Error in {self.bet_type} bet modal: {e}", exc_info=True)
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(
+                        f"❌ Error processing {BET_TYPES[self.bet_type]['name']} bets. Please try again!",
+                        ephemeral=True
+                    )
+                else:
+                    await interaction.followup.send(
+                        f"❌ Error processing {BET_TYPES[self.bet_type]['name']} bets. Please try again!",
+                        ephemeral=True
+                    )
+            except Exception as error_response_error:
+                logger.error(f"Failed to send error response: {error_response_error}")
+                
+    async def _process_final_bets(self, interaction: discord.Interaction, parsed_bets: list, total_bet_amount: int):
+        """Process the final bet submission"""
+        user_id = str(interaction.user.id)
+        
+        try:
+            # Check balance
+            user_balance = await self.cog.currency_manager.get_balance(user_id)
+            if user_balance < total_bet_amount:
+                await interaction.response.send_message(
+                    f"❌ Insufficient funds! You have ${user_balance:,.2f}, need ${total_bet_amount:,.2f}.",
+                    ephemeral=True
+                )
+                return
+            
+            # Check betting conditions
+            if not self.cog.horse_race_manager.is_betting_time():
+                await interaction.response.send_message("❌ Betting is not currently open!", ephemeral=True)
+                return
+                
+            if self.cog.horse_race_manager.race_in_progress:
+                await interaction.response.send_message("❌ Race is in progress, betting is closed!", ephemeral=True)
+                return
+            
+            # Use batch betting functionality
+            successful_bets, failed_bets = await self.cog.horse_race_manager.place_multiple_bets(user_id, parsed_bets)
+            
+            if successful_bets:
+                # Deduct currency for successful bets
+                total_deducted = sum(bet['amount'] for bet in successful_bets)
+                await self.cog.currency_manager.subtract_currency(user_id, total_deducted)
+                
+                # Create detailed response
+                embed = discord.Embed(
+                    title=f"✅ {BET_TYPES[self.bet_type]['name']} Bets Placed Successfully!",
+                    color=0x00ff00
+                )
+                
+                bet_summary = ""
+                total_potential_winnings = 0
+                horses = await self.cog.horse_race_manager.get_current_horses()
+                
+                for bet in successful_bets:
+                    horse_name = HORSE_STATS[bet['horse_id'] - 1]['name']
+                    horse_color = HORSE_STATS[bet['horse_id'] - 1]['color']
+                    
+                    # Calculate potential winnings
+                    potential_winnings = self.cog.horse_race_manager.calculate_potential_winnings(
+                        horses, bet['horse_id'], bet['amount'], bet['bet_type']
+                    )
+                    total_potential_winnings += potential_winnings
+                    
+                    bet_summary += f"• {horse_color} {horse_name}: ${bet['amount']:,.2f} → ${potential_winnings:,.2f}\n"
+                
+                embed.add_field(
+                    name=f"🎯 {BET_TYPES[self.bet_type]['name']} Bets & Potential Winnings",
+                    value=bet_summary,
+                    inline=False
+                )
+                
+                embed.add_field(
+                    name="💰 Summary",
+                    value=(
+                        f"**Total Bet:** ${total_deducted:,.2f}\n"
+                        f"**Max Potential:** ${total_potential_winnings:,.2f}\n"
+                        f"**Bet Type:** {BET_TYPES[self.bet_type]['description']}"
+                    ),
+                    inline=True
+                )
+                
+                new_balance = await self.cog.currency_manager.get_balance(user_id)
+                embed.add_field(
+                    name="🏦 Balance",
+                    value=f"${new_balance:,.2f} remaining",
+                    inline=True
+                )
+                
+                if failed_bets:
+                    failed_summary = ""
+                    for failed in failed_bets:
+                        horse_name = HORSE_STATS[failed['bet']['horse_id'] - 1]['name']
+                        failed_summary += f"• {horse_name}: {failed['error']}\n"
+                    
+                    embed.add_field(
+                        name="❌ Failed Bets",
+                        value=failed_summary,
+                        inline=False
+                    )
+                
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+            else:
+                # All bets failed
+                error_summary = f"❌ **All {BET_TYPES[self.bet_type]['name']} bets failed:**\n"
+                for failed in failed_bets:
+                    horse_name = HORSE_STATS[failed['bet']['horse_id'] - 1]['name']
+                    error_summary += f"• {horse_name}: {failed['error']}\n"
+                
+                await interaction.response.send_message(error_summary, ephemeral=True)
+                
+        except Exception as e:
+            logger.error(f"Error processing final {self.bet_type} bets: {e}", exc_info=True)
+            await interaction.response.send_message(
+                f"❌ Error processing {BET_TYPES[self.bet_type]['name']} bets. Please try again!",
+                ephemeral=True
+            )
+
+class ContinueBettingView(discord.ui.View):
+    """View for continuing betting with remaining horses or submitting current bets"""
+    def __init__(self, cog, bet_type, current_bets, current_total):
+        super().__init__(timeout=300)
+        self.cog = cog
+        self.bet_type = bet_type
+        self.current_bets = current_bets
+        self.current_total = current_total
+        
+    def disable_all_items(self):
+        """Disable all buttons in the view"""
+        for item in self.children:
+            item.disabled = True
+        
+    @discord.ui.button(label="⏭️ Continue Betting", style=discord.ButtonStyle.primary)
+    async def continue_betting(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Continue betting with remaining horses"""
+        # Disable view and clear message
+        self.disable_all_items()
+        await interaction.response.edit_message(content="⏭️ Continuing with remaining horses...", embed=None, view=self)
+        
+        # Calculate how many horses we've already covered
+        horses_covered = min(5, len(HORSE_STATS)) if len(HORSE_STATS) > 5 else len(HORSE_STATS)
+        if len(HORSE_STATS) > 5 and len(self.current_bets) < 4:  # Account for note field taking space
+            horses_covered = 4
+            
+        remaining_horses = len(HORSE_STATS) - horses_covered
+        if remaining_horses > 0:
+            modal = RemainingHorsesModal(self.cog, self.bet_type, self.current_bets, self.current_total, horses_covered)
+            await interaction.followup.send_modal(modal)
+        else:
+            await interaction.followup.send("❌ All horses have been covered!", ephemeral=True)
+            
+    @discord.ui.button(label="✅ Submit Current Bets", style=discord.ButtonStyle.green)
+    async def submit_current(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Submit the current bets without continuing"""
+        # Disable view and clear message
+        self.disable_all_items()
+        await interaction.response.edit_message(content="✅ Processing your bets...", embed=None, view=self)
+        
+        if not self.current_bets:
+            await interaction.followup.send(
+                f"❌ No {BET_TYPES[self.bet_type]['name']} bets to submit!",
+                ephemeral=True
+            )
+            return
+            
+        # Process the current bets
+        await self._process_final_bets_followup(interaction, self.current_bets, self.current_total)
+        
+    @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.secondary)
+    async def cancel_betting(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Cancel the betting process"""
+        # Disable view and clear message
+        self.disable_all_items()
+        await interaction.response.edit_message(
+            content=f"❌ {BET_TYPES[self.bet_type]['name']} betting cancelled.",
+            embed=None, 
+            view=self
+        )
+        
+    async def _process_final_bets_followup(self, interaction: discord.Interaction, parsed_bets: list, total_bet_amount: int):
+        """Process the final bet submission using followup (for buttons)"""
+        user_id = str(interaction.user.id)
+        
+        try:
+            # Check balance
+            user_balance = await self.cog.currency_manager.get_balance(user_id)
+            if user_balance < total_bet_amount:
+                await interaction.followup.send(
+                    f"❌ Insufficient funds! You have ${user_balance:,.2f}, need ${total_bet_amount:,.2f}.",
+                    ephemeral=True
+                )
+                return
+            
+            # Check betting conditions
+            if not self.cog.horse_race_manager.is_betting_time():
+                await interaction.followup.send("❌ Betting is not currently open!", ephemeral=True)
+                return
+                
+            if self.cog.horse_race_manager.race_in_progress:
+                await interaction.followup.send("❌ Race is in progress, betting is closed!", ephemeral=True)
+                return
+            
+            # Use batch betting functionality
+            successful_bets, failed_bets = await self.cog.horse_race_manager.place_multiple_bets(user_id, parsed_bets)
+            
+            if successful_bets:
+                # Deduct currency for successful bets
+                total_deducted = sum(bet['amount'] for bet in successful_bets)
+                await self.cog.currency_manager.subtract_currency(user_id, total_deducted)
+                
+                # Create detailed response
+                embed = discord.Embed(
+                    title=f"✅ {BET_TYPES[self.bet_type]['name']} Bets Placed Successfully!",
+                    color=0x00ff00
+                )
+                
+                bet_summary = ""
+                total_potential_winnings = 0
+                horses = await self.cog.horse_race_manager.get_current_horses()
+                
+                for bet in successful_bets:
+                    horse_name = HORSE_STATS[bet['horse_id'] - 1]['name']
+                    horse_color = HORSE_STATS[bet['horse_id'] - 1]['color']
+                    
+                    # Calculate potential winnings
+                    potential_winnings = self.cog.horse_race_manager.calculate_potential_winnings(
+                        horses, bet['horse_id'], bet['amount'], bet['bet_type']
+                    )
+                    total_potential_winnings += potential_winnings
+                    
+                    bet_summary += f"• {horse_color} {horse_name}: ${bet['amount']:,.2f} → ${potential_winnings:,.2f}\n"
+                
+                embed.add_field(
+                    name=f"🎯 {BET_TYPES[self.bet_type]['name']} Bets & Potential Winnings",
+                    value=bet_summary,
+                    inline=False
+                )
+                
+                embed.add_field(
+                    name="💰 Summary",
+                    value=(
+                        f"**Total Bet:** ${total_deducted:,.2f}\n"
+                        f"**Max Potential:** ${total_potential_winnings:,.2f}\n"
+                        f"**Bet Type:** {BET_TYPES[self.bet_type]['description']}"
+                    ),
+                    inline=True
+                )
+                
+                new_balance = await self.cog.currency_manager.get_balance(user_id)
+                embed.add_field(
+                    name="🏦 Balance",
+                    value=f"${new_balance:,.2f} remaining",
+                    inline=True
+                )
+                
+                if failed_bets:
+                    failed_summary = ""
+                    for failed in failed_bets:
+                        horse_name = HORSE_STATS[failed['bet']['horse_id'] - 1]['name']
+                        failed_summary += f"• {horse_name}: {failed['error']}\n"
+                    
+                    embed.add_field(
+                        name="❌ Failed Bets",
+                        value=failed_summary,
+                        inline=False
+                    )
+                
+                await interaction.followup.send(embed=embed, ephemeral=True)
+            else:
+                # All bets failed
+                error_summary = f"❌ **All {BET_TYPES[self.bet_type]['name']} bets failed:**\n"
+                for failed in failed_bets:
+                    horse_name = HORSE_STATS[failed['bet']['horse_id'] - 1]['name']
+                    error_summary += f"• {horse_name}: {failed['error']}\n"
+                
+                await interaction.followup.send(error_summary, ephemeral=True)
+                
+        except Exception as e:
+            logger.error(f"Error processing final {self.bet_type} bets: {e}", exc_info=True)
+            await interaction.followup.send(
+                f"❌ Error processing {BET_TYPES[self.bet_type]['name']} bets. Please try again!",
+                ephemeral=True
+            )
+        
+    async def _process_final_bets(self, interaction: discord.Interaction, parsed_bets: list, total_bet_amount: int):
+        """Process the final bet submission"""
+        user_id = str(interaction.user.id)
+        
+        try:
+            # Check balance
+            user_balance = await self.cog.currency_manager.get_balance(user_id)
+            if user_balance < total_bet_amount:
+                await interaction.response.send_message(
+                    f"❌ Insufficient funds! You have ${user_balance:,.2f}, need ${total_bet_amount:,.2f}.",
+                    ephemeral=True
+                )
+                return
+            
+            # Check betting conditions
+            if not self.cog.horse_race_manager.is_betting_time():
+                await interaction.response.send_message("❌ Betting is not currently open!", ephemeral=True)
+                return
+                
+            if self.cog.horse_race_manager.race_in_progress:
+                await interaction.response.send_message("❌ Race is in progress, betting is closed!", ephemeral=True)
+                return
+            
+            # Use batch betting functionality
+            successful_bets, failed_bets = await self.cog.horse_race_manager.place_multiple_bets(user_id, parsed_bets)
+            
+            if successful_bets:
+                # Deduct currency for successful bets
+                total_deducted = sum(bet['amount'] for bet in successful_bets)
+                await self.cog.currency_manager.subtract_currency(user_id, total_deducted)
+                
+                # Create detailed response
+                embed = discord.Embed(
+                    title=f"✅ {BET_TYPES[self.bet_type]['name']} Bets Placed Successfully!",
+                    color=0x00ff00
+                )
+                
+                bet_summary = ""
+                total_potential_winnings = 0
+                horses = await self.cog.horse_race_manager.get_current_horses()
+                
+                for bet in successful_bets:
+                    horse_name = HORSE_STATS[bet['horse_id'] - 1]['name']
+                    horse_color = HORSE_STATS[bet['horse_id'] - 1]['color']
+                    
+                    # Calculate potential winnings
+                    potential_winnings = self.cog.horse_race_manager.calculate_potential_winnings(
+                        horses, bet['horse_id'], bet['amount'], bet['bet_type']
+                    )
+                    total_potential_winnings += potential_winnings
+                    
+                    bet_summary += f"• {horse_color} {horse_name}: ${bet['amount']:,.2f} → ${potential_winnings:,.2f}\n"
+                
+                embed.add_field(
+                    name=f"🎯 {BET_TYPES[self.bet_type]['name']} Bets & Potential Winnings",
+                    value=bet_summary,
+                    inline=False
+                )
+                
+                embed.add_field(
+                    name="💰 Summary",
+                    value=(
+                        f"**Total Bet:** ${total_deducted:,.2f}\n"
+                        f"**Max Potential:** ${total_potential_winnings:,.2f}\n"
+                        f"**Bet Type:** {BET_TYPES[self.bet_type]['description']}"
+                    ),
+                    inline=True
+                )
+                
+                new_balance = await self.cog.currency_manager.get_balance(user_id)
+                embed.add_field(
+                    name="🏦 Balance",
+                    value=f"${new_balance:,.2f} remaining",
+                    inline=True
+                )
+                
+                if failed_bets:
+                    failed_summary = ""
+                    for failed in failed_bets:
+                        horse_name = HORSE_STATS[failed['bet']['horse_id'] - 1]['name']
+                        failed_summary += f"• {horse_name}: {failed['error']}\n"
+                    
+                    embed.add_field(
+                        name="❌ Failed Bets",
+                        value=failed_summary,
+                        inline=False
+                    )
+                
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+            else:
+                # All bets failed
+                error_summary = f"❌ **All {BET_TYPES[self.bet_type]['name']} bets failed:**\n"
+                for failed in failed_bets:
+                    horse_name = HORSE_STATS[failed['bet']['horse_id'] - 1]['name']
+                    error_summary += f"• {horse_name}: {failed['error']}\n"
+                
+                await interaction.response.send_message(error_summary, ephemeral=True)
+                
+        except Exception as e:
+            logger.error(f"Error processing final {self.bet_type} bets: {e}", exc_info=True)
+            await interaction.response.send_message(
+                f"❌ Error processing {BET_TYPES[self.bet_type]['name']} bets. Please try again!",
+                ephemeral=True
+            )
+
+class RemainingHorsesModal(discord.ui.Modal):
+    """Modal for betting on remaining horses"""
+    def __init__(self, cog, bet_type, existing_bets, existing_total, start_index):
+        bet_config = BET_TYPES[bet_type]
+        remaining_count = len(HORSE_STATS) - start_index
+        super().__init__(title=f"🏇 {bet_config['name']} - Horses {start_index+1}-{len(HORSE_STATS)}", timeout=600)
+        self.cog = cog
+        self.bet_type = bet_type
+        self.existing_bets = existing_bets
+        self.existing_total = existing_total
+        self.start_index = start_index
+        
+        # Add text inputs for remaining horses (up to 5)
+        self.horse_inputs = []
+        max_horses = min(5, remaining_count)
+        
+        for i in range(max_horses):
+            horse_index = start_index + i
+            horse_stat = HORSE_STATS[horse_index]
+            horse_num = horse_index + 1
+            
+            input_field = discord.ui.TextInput(
+                label=f"{horse_num}. {horse_stat['name']} {horse_stat['color']}",
+                placeholder="Enter bet amount (e.g., 1000) or leave blank",
+                required=False,
+                max_length=10,
+                style=discord.TextStyle.short
+            )
+            self.add_item(input_field)
+            self.horse_inputs.append(input_field)
+            
+    async def on_submit(self, interaction: discord.Interaction):
+        """Process remaining horses bet submission"""
+        try:
+            user_id = str(interaction.user.id)
+            logger.info(f"Processing remaining {self.bet_type} bets for user {user_id}")
+            
+            # Parse new bet inputs
+            new_bets = []
+            new_total = 0
+            parse_errors = []
+            
+            for i, input_field in enumerate(self.horse_inputs):
+                if input_field.value.strip():
+                    horse_index = self.start_index + i
+                    horse_id = horse_index + 1
+                    
+                    try:
+                        amount = int(input_field.value.strip())
+                        if amount > 0:
+                            new_bets.append({
+                                'horse_id': horse_id,
+                                'amount': amount,
+                                'bet_type': self.bet_type
+                            })
+                            new_total += amount
+                    except ValueError:
+                        horse_name = HORSE_STATS[horse_index]['name']
+                        parse_errors.append(f"{horse_name}: Invalid amount '{input_field.value}'. Please enter a valid number.")
+            
+            # Show parse errors if any
+            if parse_errors:
+                error_msg = "❌ **Input Errors:**\n" + "\n".join([f"• {error}" for error in parse_errors])
+                if new_bets:
+                    error_msg += f"\n\n✅ {len(new_bets)} valid new bets found."
+                await interaction.response.send_message(error_msg, ephemeral=True)
+                return
+            
+            # Combine with existing bets
+            all_bets = self.existing_bets + new_bets
+            total_amount = self.existing_total + new_total
+            
+            if not all_bets:
+                await interaction.response.send_message(
+                    f"❌ No {BET_TYPES[self.bet_type]['name']} bets configured!",
+                    ephemeral=True
+                )
+                return
+            
+            # Process all bets
+            await self._process_final_bets(interaction, all_bets, total_amount)
+                
+        except Exception as e:
+            logger.error(f"Error in remaining horses {self.bet_type} modal: {e}", exc_info=True)
+            await interaction.response.send_message(
+                f"❌ Error processing remaining {BET_TYPES[self.bet_type]['name']} bets. Please try again!",
+                ephemeral=True
+            )
+            
+    async def _process_final_bets(self, interaction: discord.Interaction, parsed_bets: list, total_bet_amount: int):
+        """Process the final bet submission - same as in BetTypeModal"""
+        user_id = str(interaction.user.id)
+        
+        try:
+            # Check balance
+            user_balance = await self.cog.currency_manager.get_balance(user_id)
+            if user_balance < total_bet_amount:
+                await interaction.response.send_message(
+                    f"❌ Insufficient funds! You have ${user_balance:,.2f}, need ${total_bet_amount:,.2f}.",
+                    ephemeral=True
+                )
+                return
+            
+            # Check betting conditions
+            if not self.cog.horse_race_manager.is_betting_time():
+                await interaction.response.send_message("❌ Betting is not currently open!", ephemeral=True)
+                return
+                
+            if self.cog.horse_race_manager.race_in_progress:
+                await interaction.response.send_message("❌ Race is in progress, betting is closed!", ephemeral=True)
+                return
+            
+            # Use batch betting functionality
+            successful_bets, failed_bets = await self.cog.horse_race_manager.place_multiple_bets(user_id, parsed_bets)
+            
+            if successful_bets:
+                # Deduct currency for successful bets
+                total_deducted = sum(bet['amount'] for bet in successful_bets)
+                await self.cog.currency_manager.subtract_currency(user_id, total_deducted)
+                
+                # Create detailed response
+                embed = discord.Embed(
+                    title=f"✅ {BET_TYPES[self.bet_type]['name']} Bets Placed Successfully!",
+                    color=0x00ff00
+                )
+                
+                bet_summary = ""
+                total_potential_winnings = 0
+                horses = await self.cog.horse_race_manager.get_current_horses()
+                
+                for bet in successful_bets:
+                    horse_name = HORSE_STATS[bet['horse_id'] - 1]['name']
+                    horse_color = HORSE_STATS[bet['horse_id'] - 1]['color']
+                    
+                    # Calculate potential winnings
+                    potential_winnings = self.cog.horse_race_manager.calculate_potential_winnings(
+                        horses, bet['horse_id'], bet['amount'], bet['bet_type']
+                    )
+                    total_potential_winnings += potential_winnings
+                    
+                    bet_summary += f"• {horse_color} {horse_name}: ${bet['amount']:,.2f} → ${potential_winnings:,.2f}\n"
+                
+                embed.add_field(
+                    name=f"🎯 Complete {BET_TYPES[self.bet_type]['name']} Bets & Potential Winnings",
+                    value=bet_summary,
+                    inline=False
+                )
+                
+                embed.add_field(
+                    name="💰 Final Summary",
+                    value=(
+                        f"**Total Bet:** ${total_deducted:,.2f}\n"
+                        f"**Max Potential:** ${total_potential_winnings:,.2f}\n"
+                        f"**Bet Type:** {BET_TYPES[self.bet_type]['description']}"
+                    ),
+                    inline=True
+                )
+                
+                new_balance = await self.cog.currency_manager.get_balance(user_id)
+                embed.add_field(
+                    name="🏦 Balance",
+                    value=f"${new_balance:,.2f} remaining",
+                    inline=True
+                )
+                
+                if failed_bets:
+                    failed_summary = ""
+                    for failed in failed_bets:
+                        horse_name = HORSE_STATS[failed['bet']['horse_id'] - 1]['name']
+                        failed_summary += f"• {horse_name}: {failed['error']}\n"
+                    
+                    embed.add_field(
+                        name="❌ Failed Bets",
+                        value=failed_summary,
+                        inline=False
+                    )
+                
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+            else:
+                # All bets failed
+                error_summary = f"❌ **All {BET_TYPES[self.bet_type]['name']} bets failed:**\n"
+                for failed in failed_bets:
+                    horse_name = HORSE_STATS[failed['bet']['horse_id'] - 1]['name']
+                    error_summary += f"• {horse_name}: {failed['error']}\n"
+                
+                await interaction.response.send_message(error_summary, ephemeral=True)
+                
+        except Exception as e:
+            logger.error(f"Error processing final {self.bet_type} bets: {e}", exc_info=True)
+            await interaction.response.send_message(
+                f"❌ Error processing {BET_TYPES[self.bet_type]['name']} bets. Please try again!",
+                ephemeral=True
+            )
+
+class ComprehensiveMultiBetModal(discord.ui.Modal):
+    """Modal for betting on all horses with bet type selection"""
+    def __init__(self, cog, start_index=0):
+        super().__init__(title=f"🏇 Multi-Bet (Horses {start_index+1}-{min(start_index+5, len(HORSE_STATS))})", timeout=600)
+        self.cog = cog
+        self.start_index = start_index
+        
+        # Add inputs for up to 5 horses starting from start_index
+        self.horse_inputs = []
+        end_index = min(start_index + 5, len(HORSE_STATS))
+        
+        for i in range(start_index, end_index):
+            horse_stat = HORSE_STATS[i]
+            horse_num = i + 1
+            
+            input_field = discord.ui.TextInput(
+                label=f"{horse_num}. {horse_stat['name']} {horse_stat['color']}",
+                placeholder="Format: amount,bet_type (e.g., 1000,win or 500,place)",
+                required=False,
+                max_length=20,
+                style=discord.TextStyle.short
+            )
+            self.add_item(input_field)
+            self.horse_inputs.append(input_field)
+            
+    async def on_submit(self, interaction: discord.Interaction):
+        """Process comprehensive multi-bet submission"""
+        try:
+            user_id = str(interaction.user.id)
+            logger.info(f"Processing comprehensive multi-bet for user {user_id}")
+            
+            # Parse all bet inputs
+            parsed_bets = []
+            total_bet_amount = 0
+            parse_errors = []
+            
+            for i, input_field in enumerate(self.horse_inputs):
+                if input_field.value.strip():
+                    horse_index = self.start_index + i
+                    horse_id = horse_index + 1
+                    
+                    try:
+                        # Parse input format: "amount,bet_type" or just "amount" (defaults to win)
+                        parts = input_field.value.strip().split(',')
+                        amount = int(parts[0].strip())
+                        bet_type = parts[1].strip().lower() if len(parts) > 1 else 'win'
+                        
+                        # Validate bet type
+                        if bet_type not in BET_TYPES:
+                            parse_errors.append(f"{HORSE_STATS[horse_index]['name']}: Invalid bet type '{bet_type}'. Use: win, place, show, last")
+                            continue
+                            
+                        if amount > 0:
+                            parsed_bets.append({
+                                'horse_id': horse_id,
+                                'amount': amount,
+                                'bet_type': bet_type
+                            })
+                            total_bet_amount += amount
+                            
+                    except (ValueError, IndexError):
+                        horse_name = HORSE_STATS[horse_index]['name']
+                        parse_errors.append(f"{horse_name}: Invalid format. Use 'amount,bet_type' (e.g., 1000,win)")
+            
+            # Show parse errors if any
+            if parse_errors:
+                error_msg = "❌ **Input Format Errors:**\n" + "\n".join([f"• {error}" for error in parse_errors])
+                if parsed_bets:
+                    error_msg += f"\n\n✅ Successfully parsed {len(parsed_bets)} valid bets."
+                await interaction.response.send_message(error_msg, ephemeral=True)
+                return
+            
+            if not parsed_bets:
+                await interaction.response.send_message(
+                    "❌ No valid bets found. Format: `amount,bet_type` (e.g., `1000,win` or `500,place`)",
+                    ephemeral=True
+                )
+                return
+            
+            # Check total balance
+            user_balance = await self.cog.currency_manager.get_balance(user_id)
+            if user_balance < total_bet_amount:
+                await interaction.response.send_message(
+                    f"❌ Insufficient funds! You have ${user_balance:,.2f}, need ${total_bet_amount:,.2f}.",
+                    ephemeral=True
+                )
+                return
+            
+            # Check betting conditions
+            if not self.cog.horse_race_manager.is_betting_time():
+                await interaction.response.send_message("❌ Betting is not currently open!", ephemeral=True)
+                return
+                
+            if self.cog.horse_race_manager.race_in_progress:
+                await interaction.response.send_message("❌ Race is in progress, betting is closed!", ephemeral=True)
+                return
+            
+            # Use batch betting functionality
+            successful_bets, failed_bets = await self.cog.horse_race_manager.place_multiple_bets(user_id, parsed_bets)
+            
+            if successful_bets:
+                # Deduct currency for successful bets
+                total_deducted = sum(bet['amount'] for bet in successful_bets)
+                await self.cog.currency_manager.subtract_currency(user_id, total_deducted)
+                
+                # Create detailed response with potential winnings
+                embed = discord.Embed(
+                    title="✅ Comprehensive Multi-Bet Placed!",
+                    color=0x00ff00
+                )
+                
+                bet_summary = ""
+                total_potential_winnings = 0
+                horses = await self.cog.horse_race_manager.get_current_horses()
+                
+                for bet in successful_bets:
+                    horse_name = HORSE_STATS[bet['horse_id'] - 1]['name']
+                    horse_color = HORSE_STATS[bet['horse_id'] - 1]['color']
+                    bet_type_name = BET_TYPES[bet['bet_type']]['name']
+                    
+                    # Calculate potential winnings
+                    potential_winnings = self.cog.horse_race_manager.calculate_potential_winnings(
+                        horses, bet['horse_id'], bet['amount'], bet['bet_type']
+                    )
+                    total_potential_winnings += potential_winnings
+                    
+                    bet_summary += f"• {horse_color} {horse_name}: ${bet['amount']:,.2f} ({bet_type_name}) → ${potential_winnings:,.2f}\n"
+                
+                embed.add_field(
+                    name="🎯 Successful Bets & Potential Winnings",
+                    value=bet_summary,
+                    inline=False
+                )
+                
+                embed.add_field(
+                    name="💰 Bet Summary",
+                    value=f"Total Bet: ${total_deducted:,.2f}\nMax Potential: ${total_potential_winnings:,.2f}",
+                    inline=True
+                )
+                
+                new_balance = await self.cog.currency_manager.get_balance(user_id)
+                embed.add_field(
+                    name="🏦 Balance",
+                    value=f"${new_balance:,.2f} remaining",
+                    inline=True
+                )
+                
+                if failed_bets:
+                    failed_summary = ""
+                    for failed in failed_bets:
+                        horse_name = HORSE_STATS[failed['bet']['horse_id'] - 1]['name']
+                        failed_summary += f"• {horse_name}: {failed['error']}\n"
+                    
+                    embed.add_field(
+                        name="❌ Failed Bets",
+                        value=failed_summary,
+                        inline=False
+                    )
+                
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+            else:
+                # All bets failed
+                error_summary = "❌ **All bets failed:**\n"
+                for failed in failed_bets:
+                    horse_name = HORSE_STATS[failed['bet']['horse_id'] - 1]['name']
+                    error_summary += f"• {horse_name}: {failed['error']}\n"
+                
+                await interaction.response.send_message(error_summary, ephemeral=True)
+                
+        except Exception as e:
+            logger.error(f"Error in comprehensive multi-bet: {e}", exc_info=True)
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(
+                        "❌ Error processing comprehensive multi-bet. Please try again!",
+                        ephemeral=True
+                    )
+                else:
+                    await interaction.followup.send(
+                        "❌ Error processing comprehensive multi-bet. Please try again!",
+                        ephemeral=True
+                    )
+            except Exception as error_response_error:
+                logger.error(f"Failed to send error response: {error_response_error}")
+
 class HorseRacingCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -233,6 +1331,10 @@ class HorseRacingCog(commands.Cog):
     )
     async def horserace_bet(self, interaction: discord.Interaction, amount: int):
         await self.show_horse_selection(interaction, amount)
+        
+    @app_commands.command(name="horserace_multibet", description="Place multiple bets quickly with enhanced interface")
+    async def horserace_multibet(self, interaction: discord.Interaction):
+        await self.show_multibet_interface(interaction)
         
     @app_commands.command(name="horserace_start", description="Start a horse race manually (admin only, if enabled)")
     async def horserace_start(self, interaction: discord.Interaction):
@@ -995,6 +2097,110 @@ class HorseRacingCog(commands.Cog):
         except Exception as e:
             logger.error(f"Error showing race results: {e}")
             await channel.send("❌ Error processing race results!")
+            
+    async def show_multibet_interface(self, interaction: discord.Interaction):
+        """Show the clean multi-betting interface"""
+        user_id = str(interaction.user.id)
+        
+        try:
+            logger.info(f"Showing clean multi-bet interface for user {user_id}")
+            
+            # Check betting conditions first
+            if not self.horse_race_manager.is_betting_time():
+                await interaction.response.send_message("❌ Betting is not currently open!", ephemeral=True)
+                return
+                
+            if self.horse_race_manager.race_in_progress:
+                await interaction.response.send_message("❌ Race is in progress, betting is closed!", ephemeral=True)
+                return
+            
+            # Get user balance for display
+            user_balance = await self.currency_manager.get_balance(user_id)
+            
+            # Create main embed
+            embed = discord.Embed(
+                title="🏇 Multi-Bet Interface 🏇",
+                description=(
+                    "**Select a bet type to place multiple bets:**\n\n"
+                    "Each bet type opens a form where you can enter amounts for all horses at once.\n"
+                    "Simply click the bet type you want and fill in amounts for your chosen horses."
+                ),
+                color=0x0099ff
+            )
+            
+            # Show current balance
+            embed.add_field(
+                name="💰 Your Balance",
+                value=f"${user_balance:,.2f}",
+                inline=True
+            )
+            
+            # Show betting window info
+            next_race = self.horse_race_manager.get_next_race_time()
+            embed.add_field(
+                name="⏰ Next Race",
+                value=f"<t:{int(next_race.timestamp())}:R>",
+                inline=True
+            )
+            
+            # Show bet type descriptions with odds
+            bet_info = ""
+            horses = await self.horse_race_manager.get_current_horses()
+            
+            for bet_type, config in BET_TYPES.items():
+                odds = self.horse_race_manager.calculate_payout_odds(horses, bet_type)
+                avg_odds = sum(odds.values()) / len(odds)
+                bet_info += f"**{config['name']}**: {config['description']} (Avg: {avg_odds:.1f}x)\n"
+            
+            embed.add_field(
+                name="🎯 Available Bet Types",
+                value=bet_info,
+                inline=False
+            )
+            
+            # Show all horses summary
+            horses_summary = ""
+            win_odds = self.horse_race_manager.calculate_payout_odds(horses, "win")
+            
+            for i, horse_stat in enumerate(HORSE_STATS, 1):
+                horses_summary += f"{horse_stat['color']} **{i}. {horse_stat['name']}** ({win_odds[i]:.1f}x)\n"
+            
+            embed.add_field(
+                name="🐎 All Horses & Win Odds",
+                value=horses_summary,
+                inline=False
+            )
+            
+            # Add usage instructions
+            embed.add_field(
+                name="📝 How to Use",
+                value=(
+                    "1. Click a bet type button below\n"
+                    "2. Enter bet amounts for desired horses\n"
+                    "3. Submit or continue to more horses\n"
+                    "4. Review and confirm your bets"
+                ),
+                inline=False
+            )
+            
+            # Create the clean view with 4 bet type buttons
+            view = CleanMultiBetView(self)
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            logger.info(f"Clean multi-bet interface displayed successfully for user {user_id}")
+            
+        except Exception as e:
+            logger.error(f"Error showing clean multi-bet interface for user {user_id}: {e}", exc_info=True)
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(
+                        "❌ Error showing multi-bet interface. Please try again!", ephemeral=True
+                    )
+                else:
+                    await interaction.followup.send(
+                        "❌ Error showing multi-bet interface. Please try again!", ephemeral=True
+                    )
+            except Exception as error_response_error:
+                logger.error(f"Failed to send error response to user {user_id}: {error_response_error}")
 
 async def setup(bot):
     """Setup function to load the cog"""
