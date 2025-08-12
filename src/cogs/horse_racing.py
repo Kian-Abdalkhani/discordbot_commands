@@ -123,6 +123,7 @@ class HorseRacingCog(commands.Cog):
         # Race state
         self.current_race_message = None
         self.race_start_time = None
+        self.race_starting = False  # Flag to prevent race condition during start
         
     async def _validate_channel_config(self):
         """Validate that the horse race channel is properly configured"""
@@ -161,9 +162,9 @@ class HorseRacingCog(commands.Cog):
         try:
             logger.debug("Running race schedule check...")
             
-            if self.horse_race_manager.race_in_progress:
-                logger.debug("Race already in progress, skipping schedule check")
-                return  # Skip check if race already in progress
+            if self.horse_race_manager.race_in_progress or self.race_starting:
+                logger.debug("Race already in progress or starting, skipping schedule check")
+                return  # Skip check if race already in progress or starting
                 
             now = datetime.now()
             logger.debug(f"Current time: {now.strftime('%Y-%m-%d %H:%M:%S')} (weekday: {now.weekday()})")
@@ -183,9 +184,10 @@ class HorseRacingCog(commands.Cog):
                 logger.debug(f"Time difference: {time_diff:.1f} seconds")
                 
                 # Check if today matches the race day and it's time for the race
-                # Allow a 10-minute window and ensure we haven't passed the time by more than 5 minutes
+                # Allow a 5-minute window after scheduled time only to prevent multiple triggers
                 if (now.weekday() == race_day and 
-                    -300 <= time_diff <= 600):  # 5 minutes before to 10 minutes after scheduled time
+                    0 <= time_diff <= 300 and  # 0 to 5 minutes after scheduled time
+                    self.horse_race_manager.should_start_race_now(today_race_time)):  # Check for duplicates
                     
                     # Find the general channel to announce the race
                     guild = self.bot.get_guild(GUILD_ID)
@@ -195,7 +197,11 @@ class HorseRacingCog(commands.Cog):
                         
                         if channel:
                             logger.info(f"Starting scheduled race in channel: {channel.name} ({channel.id})")
-                            await self.start_scheduled_race(channel)
+                            self.race_starting = True  # Set flag immediately to prevent race condition
+                            try:
+                                await self.start_scheduled_race(channel)
+                            finally:
+                                self.race_starting = False  # Clear flag after race start attempt
                             return  # Start only one race at a time
                         else:
                             logger.error(f"Could not find channel with ID {HORSE_RACE_CHANNEL_ID}")

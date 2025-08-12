@@ -122,6 +122,7 @@ class HorseRaceManager:
         self.race_in_progress = False
         self.betting_open = False
         self.race_lock = asyncio.Lock()
+        self.last_race_start_time = None  # Track when last race was started to prevent duplicates
         
     async def initialize(self):
         """Initialize the horse race manager"""
@@ -136,6 +137,16 @@ class HorseRaceManager:
                     content = await f.read()
                     if content.strip():  # Check if file has content
                         self.race_data = json.loads(content)
+                        
+                        # Load last race start time if available
+                        if "last_race_start_time" in self.race_data:
+                            try:
+                                self.last_race_start_time = datetime.fromisoformat(self.race_data["last_race_start_time"])
+                                logger.info(f"Loaded last race start time: {self.last_race_start_time}")
+                            except (ValueError, TypeError):
+                                logger.warning("Invalid last race start time format, resetting to None")
+                                self.last_race_start_time = None
+                        
                         logger.info(f"Loaded race data from {self.data_file}")
                     else:
                         logger.info(f"Race file is empty, starting with default data")
@@ -151,6 +162,10 @@ class HorseRaceManager:
         """Save race data to JSON file"""
         await self.load_race_data()
         try:
+            # Save last race start time if available
+            if self.last_race_start_time:
+                self.race_data["last_race_start_time"] = self.last_race_start_time.isoformat()
+            
             os.makedirs(os.path.dirname(self.data_file), exist_ok=True)
             async with aiofiles.open(self.data_file, 'w') as f:
                 await f.write(json.dumps(self.race_data, indent=2, default=str))
@@ -218,6 +233,24 @@ class HorseRaceManager:
             
         # Return the earliest upcoming race
         return min(upcoming_races)
+        
+    def should_start_race_now(self, scheduled_time: datetime) -> bool:
+        """Check if a race should be started now for the given scheduled time"""
+        now = datetime.now()
+        
+        # Don't start if race is already in progress
+        if self.race_in_progress:
+            return False
+            
+        # Check if we already started a race for this exact scheduled time
+        if self.last_race_start_time:
+            # If we started a race within 1 hour of this scheduled time, don't start another
+            time_since_last_race = abs((self.last_race_start_time - scheduled_time).total_seconds())
+            if time_since_last_race <= 3600:  # Within 1 hour
+                logger.debug(f"Race already started for this time period. Last: {self.last_race_start_time}, Scheduled: {scheduled_time}")
+                return False
+        
+        return True
         
     def get_next_race_times(self, count: int = 3) -> List[datetime]:
         """Get the next N race times from the schedule"""
@@ -465,14 +498,20 @@ class HorseRaceManager:
             self.race_in_progress = True
             self.betting_open = False
             
+            # Record when this race started to prevent duplicates
+            self.last_race_start_time = datetime.now()
+            
             # Initialize horses
             horses = await self.get_current_horses()
             self.current_race = {
                 "horses": horses,
-                "start_time": datetime.now(),
+                "start_time": self.last_race_start_time,
                 "finished": False,
                 "results": []
             }
+            
+            # Save the race start time immediately
+            await self.save_race_data()
             
             return horses
             
