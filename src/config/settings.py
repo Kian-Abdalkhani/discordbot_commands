@@ -120,18 +120,18 @@ HORSE_RACE_SCHEDULE = [
 # Horse Stats Configuration - 8 racing horses with varied stats (favorites to longshots)
 HORSE_STATS = [
     # Strong favorites (low odds, high stats)
-    {"name": "Lightning Bolt", "speed": 92, "stamina": 88, "acceleration": 89, "color": "⚡️"},
-    {"name": "Thunder Strike", "speed": 90, "stamina": 86, "acceleration": 88, "color": "🌩️"},
+    {"name": "Lightning Bolt", "speed": 92, "stamina": 88, "acceleration": 86, "color": "⚡️"},
+    {"name": "Thunder Strike", "speed": 90, "stamina": 86, "acceleration": 84, "color": "🌩️"},
     
     # Good contenders (medium odds)
     {"name": "Fire Storm", "speed": 88, "stamina": 85, "acceleration": 87, "color": "🔥"},
     {"name": "Star Chaser", "speed": 86, "stamina": 87, "acceleration": 85, "color": "⭐"},
     
     # Dark horses (medium-low odds)
-    {"name": "Wind Walker", "speed": 82, "stamina": 84, "acceleration": 80, "color": "💨"},
+    {"name": "Wind Walker", "speed": 82, "stamina": 88, "acceleration": 80, "color": "💨"},
     {"name": "Midnight Runner", "speed": 80, "stamina": 86, "acceleration": 78, "color": "🌙"},
     
     # Longshots (high odds, lower stats)
-    {"name": "Golden Arrow", "speed": 75, "stamina": 78, "acceleration": 72, "color": "🏹"},
-    {"name": "Shadow Dash", "speed": 74, "stamina": 76, "acceleration": 73, "color": "👤"}
+    {"name": "Golden Arrow", "speed": 75, "stamina": 78, "acceleration": 83, "color": "🏹"},
+    {"name": "Shadow Dash", "speed": 74, "stamina": 76, "acceleration": 85, "color": "👤"}
 ]
