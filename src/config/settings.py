@@ -67,7 +67,7 @@ HORSE_RACE_HOUSE_EDGE = 0.05  # 5% house edge on odds
 HORSE_RACE_DURATION = 120  # Race animation duration in seconds (2 minutes) - dynamic system allows for more varied finish times
 HORSE_RACE_UPDATE_INTERVAL = 1.0  # Update race progress every 1 second for smoother animation
 HORSE_RACE_TRACK_LENGTH = 1200  # Track length in meters
-HORSE_RANDOM_VARIATION = 60 # Per-update randomness factor for dynamic racing
+HORSE_RANDOM_VARIATION = 80 # Per-update randomness factor for dynamic racing
 HORSE_RACE_BET_WINDOW = 48 # The number of hours that betting is open prior to the upcoming horse race
 
 # Bet Types Configuration
@@ -107,9 +107,14 @@ HORSE_RACE_CHANNEL_ID = int(os.getenv("HORSE_RACE_CHANNEL_ID")) if os.getenv("HO
 # ensure the TZ environment variable is set in docker-compose.yml to match your local timezone.
 # Days: Monday=0, Tuesday=1, Wednesday=2, Thursday=3, Friday=4, Saturday=5, Sunday=6
 HORSE_RACE_SCHEDULE = [
+    {"day": 6, "hour": 20, "minute": 0}, # Sunday 8 PM
+    {"day": 0, "hour": 20, "minute": 0},
     {"day": 1, "hour": 20, "minute": 0},  # Tuesday 8 PM
+    {"day": 2, "hour": 20, "minute": 0},
     {"day": 3, "hour": 20, "minute": 0},  # Thursday 8 PM
+    {"day": 4, "hour": 20, "minute": 0},
     {"day": 5, "hour": 20, "minute": 0},  # Saturday 8 PM
+
 ]
 
 # Horse Stats Configuration - 8 racing horses with varied stats (favorites to longshots)
