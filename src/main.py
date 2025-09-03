@@ -13,6 +13,7 @@ from src.utils.permission_store import PermissionManager
 from src.utils.currency_manager import CurrencyManager
 from src.utils.backup_manager import BackupManager
 from src.utils.horse_nickname_manager import HorseNicknameManager
+from src.utils.dividend_manager import DividendManager
 
 load_dotenv()
 setup_logging()
@@ -42,6 +43,9 @@ class MyClient(commands.Bot):
         # set horse nickname manager
         self.horse_nickname_manager = HorseNicknameManager()
 
+        # set dividend manager
+        self.dividend_manager = DividendManager(self.currency_manager)
+
         # override the self.tree.interaction_check method
         self.tree.interaction_check = self.interaction_check
 
@@ -52,6 +56,7 @@ class MyClient(commands.Bot):
         await self.pm.initialize()
         await self.currency_manager.initialize()
         await self.backup_manager.initialize()
+        await self.dividend_manager.initialize()
 
         # Automatically discover all cog modules in src/cogs/ folder
         cogs_dir = os.path.join(os.path.dirname(__file__), 'cogs')

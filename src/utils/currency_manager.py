@@ -276,7 +276,7 @@ class CurrencyManager:
             # Average the purchase price if buying more of the same stock
             existing_shares = portfolio[symbol]["shares"]
             existing_price = portfolio[symbol]["purchase_price"]
-            existing_leverage = portfolio[symbol]["leverage"]
+            existing_leverage = STOCK_MARKET_LEVERAGE
             
             # Only allow same leverage for additional purchases
             if existing_leverage != leverage:
@@ -356,6 +356,14 @@ class CurrencyManager:
     async def get_portfolio(self, user_id: str) -> Dict:
         """Get user's stock portfolio"""
         user_data = await self.get_user_data(user_id)
+
+        # Ensure that portfolio leverage matches current configured leverage on the server:
+        for sym, data in user_data["portfolio"].items():
+            if data["leverage"] != STOCK_MARKET_LEVERAGE:
+                data["leverage"] = STOCK_MARKET_LEVERAGE
+                await self.save_currency_data()
+                user_data = await self.get_user_data(user_id)
+
         return user_data["portfolio"]
     
     async def check_and_liquidate_positions(self, user_id: str, current_prices: Dict[str, float]) -> List[str]:
@@ -437,7 +445,7 @@ class CurrencyManager:
             
             shares = position["shares"]
             purchase_price = position["purchase_price"]
-            leverage = position["leverage"]
+            leverage = STOCK_MARKET_LEVERAGE
             current_price = current_prices[symbol]
             
             # Calculate the position value with leverage
@@ -463,3 +471,93 @@ class CurrencyManager:
             }
         
         return total_value, total_profit_loss, position_details
+    
+    async def record_dividend_payment(self, user_id: str, symbol: str, amount: float, shares: float, ex_dividend_date: str) -> bool:
+        """Record a dividend payment for a user"""
+        try:
+            user_data = await self.get_user_data(user_id)
+            
+            # Initialize dividend tracking if it doesn't exist
+            if "dividend_earnings" not in user_data:
+                user_data["dividend_earnings"] = {
+                    "total": 0.0,
+                    "by_stock": {},
+                    "payments": []
+                }
+            
+            dividend_earnings = user_data["dividend_earnings"]
+            
+            # Update totals
+            dividend_earnings["total"] += amount
+            
+            if symbol not in dividend_earnings["by_stock"]:
+                dividend_earnings["by_stock"][symbol] = 0.0
+            dividend_earnings["by_stock"][symbol] += amount
+            
+            # Record the payment
+            payment_record = {
+                "symbol": symbol,
+                "amount": amount,
+                "shares": shares,
+                "amount_per_share": amount / shares if shares > 0 else 0,
+                "ex_dividend_date": ex_dividend_date,
+                "payment_date": datetime.now().isoformat()
+            }
+            
+            dividend_earnings["payments"].append(payment_record)
+            
+            # Keep only last 50 payments to prevent file bloat
+            if len(dividend_earnings["payments"]) > 50:
+                dividend_earnings["payments"] = dividend_earnings["payments"][-50:]
+            
+            await self.save_currency_data()
+            
+            logger.info(f"Recorded dividend payment for user {user_id}: ${amount:.2f} from {symbol}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error recording dividend payment for user {user_id}: {e}")
+            return False
+    
+    async def get_dividend_summary(self, user_id: str) -> Dict:
+        """Get dividend earnings summary for a user"""
+        try:
+            user_data = await self.get_user_data(user_id)
+            dividend_earnings = user_data.get("dividend_earnings", {
+                "total": 0.0,
+                "by_stock": {},
+                "payments": []
+            })
+            
+            # Calculate additional stats
+            recent_payments = dividend_earnings.get("payments", [])
+            
+            # Get payments from last 30 days
+            thirty_days_ago = datetime.now() - timedelta(days=30)
+            recent_total = 0.0
+            
+            for payment in recent_payments:
+                try:
+                    payment_date = datetime.fromisoformat(payment["payment_date"])
+                    if payment_date >= thirty_days_ago:
+                        recent_total += payment["amount"]
+                except:
+                    continue
+            
+            return {
+                "total_all_time": dividend_earnings.get("total", 0.0),
+                "total_last_30_days": recent_total,
+                "by_stock": dividend_earnings.get("by_stock", {}),
+                "recent_payments": recent_payments[-10:],  # Last 10 payments
+                "payment_count": len(recent_payments)
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting dividend summary for user {user_id}: {e}")
+            return {
+                "total_all_time": 0.0,
+                "total_last_30_days": 0.0,
+                "by_stock": {},
+                "recent_payments": [],
+                "payment_count": 0
+            }
