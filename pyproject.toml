@@ -12,6 +12,7 @@ dependencies = [
     "python-dotenv>=1.1.0",
     "yfinance>=0.2.18",
     "aiofiles>=24.1.0",
+    "discord-py-stubs>=1.6.0.2",
 ]
 
 [tool.pytest]
