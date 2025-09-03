@@ -282,18 +282,8 @@ class BlackjackCog(commands.Cog):
                             # Reload currency data before adding payout
                             await self.currency_manager.load_currency_data()
                             await self.currency_manager.add_currency(user_id, hand_payout)
-                    
-                    # Update stats based on overall result
-                    wins = sum(1 for result in results if "Win" in result or "BLACKJACK" in result)
-                    losses = sum(1 for result in results if "Loss" in result or "Busted" in result)
-                    ties = sum(1 for result in results if "Tie" in result)
-                    
-                    if wins > losses:
-                        await update_player_stats("wins")
-                    elif losses > wins:
-                        await update_player_stats("losses")
-                    else:
-                        await update_player_stats("ties")
+
+                    # Stats are updated individually per hand, no overall stats needed for split hands
                     
                     embed.add_field(name="Results", value="\n".join(results), inline=False)
                     embed.add_field(name="💰 Total Payout", value=f"${total_payout:,}", inline=True)

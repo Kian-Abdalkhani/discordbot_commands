@@ -12,6 +12,7 @@ from src.config.settings import GUILD_ID
 from src.utils.permission_store import PermissionManager
 from src.utils.currency_manager import CurrencyManager
 from src.utils.backup_manager import BackupManager
+from src.utils.horse_nickname_manager import HorseNicknameManager
 
 load_dotenv()
 setup_logging()
@@ -37,6 +38,9 @@ class MyClient(commands.Bot):
 
         # set backup manager
         self.backup_manager = BackupManager()
+
+        # set horse nickname manager
+        self.horse_nickname_manager = HorseNicknameManager()
 
         # override the self.tree.interaction_check method
         self.tree.interaction_check = self.interaction_check

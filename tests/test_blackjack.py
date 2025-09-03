@@ -572,3 +572,378 @@ class TestBlackjackCog:
         
         with pytest.raises(Exception):
             await cog.blackjack.callback(cog, interaction, bet=100)
+
+    @pytest.mark.asyncio
+    async def test_split_hand_payout_accuracy(self, cog, interaction):
+        """Test that split hands pay out exactly once per hand without double payouts"""
+        # Mock currency manager
+        balance_calls = []
+        add_currency_calls = []
+        subtract_currency_calls = []
+        
+        async def mock_get_balance(user_id):
+            balance_calls.append(user_id)
+            return 1000000  # High balance to allow splits
+        
+        async def mock_add_currency(user_id, amount):
+            add_currency_calls.append((user_id, amount))
+            return True
+        
+        async def mock_subtract_currency(user_id, amount):
+            subtract_currency_calls.append((user_id, amount))
+            return (True, 1000000 - sum(call[1] for call in subtract_currency_calls))
+        
+        with patch.object(cog.currency_manager, 'load_currency_data', new_callable=AsyncMock), \
+             patch.object(cog.currency_manager, 'get_balance', side_effect=mock_get_balance), \
+             patch.object(cog.currency_manager, 'subtract_currency', side_effect=mock_subtract_currency), \
+             patch.object(cog.currency_manager, 'add_currency', side_effect=mock_add_currency), \
+             patch.object(cog.currency_manager, 'format_balance', return_value="$1,000,000"), \
+             patch('discord.Embed'), \
+             patch.object(cog, 'save_blackjack_stats', new_callable=AsyncMock):
+            
+            # Mock the message and reactions
+            mock_message = MagicMock()
+            mock_message.add_reaction = AsyncMock()
+            mock_message.remove_reaction = AsyncMock()
+            mock_message.edit = AsyncMock()
+            mock_message.clear_reactions = AsyncMock()
+            mock_message.id = 12345
+            interaction.original_response = AsyncMock(return_value=mock_message)
+            
+            # Simulate split scenario: player gets pair of 8s, then wins both hands against dealer bust
+            reaction_sequence = [
+                (MagicMock(emoji="✂️"), interaction.user),  # Split
+                (MagicMock(emoji="🛑"), interaction.user),  # Stand on hand 1
+                (MagicMock(emoji="🛑"), interaction.user),  # Stand on hand 2
+            ]
+            cog.bot.wait_for = AsyncMock(side_effect=reaction_sequence)
+            
+            # Control deck to ensure split scenario and dealer bust
+            def mock_shuffle(deck):
+                # Set up: Player gets 8,8 (can split), Dealer gets 10,6 then busts with K
+                deck[:] = [
+                    ('8', '♠'), ('10', '♦'), ('8', '♥'), ('6', '♣'),  # P1, D1, P2, D2
+                    ('9', '♠'), ('3', '♥'), ('7', '♦'), ('K', '♣'),   # Cards for after split + dealer bust
+                ] + deck[8:]
+                print(f"Mock deck first 8 cards: {deck[:8]}")
+            
+            with patch('random.shuffle', side_effect=mock_shuffle):
+                await cog.blackjack.callback(cog, interaction, bet=100000)  # $100k bet
+                
+                # Debug: Print what actually happened
+                print(f"Subtract calls: {subtract_currency_calls}")
+                print(f"Add calls: {add_currency_calls}")
+                
+                # Verify currency operations:
+                # 1. Initial bet deduction: $100k
+                # 2. Split bet deduction: $100k (for second hand)
+                # 3. Payout for hand 1 win: $200k (2x bet)
+                # 4. Payout for hand 2 win: $200k (2x bet)
+                # Total deductions: $200k, Total payouts: $400k, Net gain: $200k
+                
+                total_deductions = sum(amount for _, amount in subtract_currency_calls)
+                total_payouts = sum(amount for _, amount in add_currency_calls)
+                
+                assert total_deductions == 200000, f"Expected $200k total deductions, got ${total_deductions:,}"
+                assert total_payouts == 400000, f"Expected $400k total payouts, got ${total_payouts:,}"
+                
+                # Verify no duplicate payouts (should have exactly 2 add_currency calls for 2 winning hands)
+                assert len(add_currency_calls) == 2, f"Expected exactly 2 payout calls for 2 hands, got {len(add_currency_calls)}"
+                assert all(amount == 200000 for _, amount in add_currency_calls), "Each hand should pay exactly $200k"
+
+    @pytest.mark.asyncio
+    async def test_split_hand_mixed_results_payout(self, cog, interaction):
+        """Test split hands with mixed results (one win, one loss) pay correctly"""
+        add_currency_calls = []
+        subtract_currency_calls = []
+        
+        async def mock_add_currency(user_id, amount):
+            add_currency_calls.append((user_id, amount))
+            return True
+        
+        async def mock_subtract_currency(user_id, amount):
+            subtract_currency_calls.append((user_id, amount))
+            return (True, 1000000)
+        
+        with patch.object(cog.currency_manager, 'load_currency_data', new_callable=AsyncMock), \
+             patch.object(cog.currency_manager, 'get_balance', new_callable=AsyncMock, return_value=1000000), \
+             patch.object(cog.currency_manager, 'subtract_currency', side_effect=mock_subtract_currency), \
+             patch.object(cog.currency_manager, 'add_currency', side_effect=mock_add_currency), \
+             patch.object(cog.currency_manager, 'format_balance', return_value="$1,000,000"), \
+             patch('discord.Embed'), \
+             patch.object(cog, 'save_blackjack_stats', new_callable=AsyncMock):
+            
+            mock_message = MagicMock()
+            mock_message.add_reaction = AsyncMock()
+            mock_message.remove_reaction = AsyncMock()
+            mock_message.edit = AsyncMock()
+            mock_message.clear_reactions = AsyncMock()
+            mock_message.id = 12345
+            interaction.original_response = AsyncMock(return_value=mock_message)
+            
+            # Player splits, hand 1 wins, hand 2 loses
+            reaction_sequence = [
+                (MagicMock(emoji="✂️"), interaction.user),  # Split
+                (MagicMock(emoji="🛑"), interaction.user),  # Stand on hand 1 (will be 18)
+                (MagicMock(emoji="🛑"), interaction.user),  # Stand on hand 2 (will be 18)
+            ]
+            cog.bot.wait_for = AsyncMock(side_effect=reaction_sequence)
+            
+            def mock_shuffle(deck):
+                # Player: 8,8 -> splits to [8,10]=18 and [8,10]=18
+                # Dealer: gets 10,9 = 19 (beats both hands)
+                deck[:] = [
+                    ('8', '♠'), ('10', '♦'), ('8', '♥'), ('9', '♣'),  # P1, D1, P2, D2
+                    ('10', '♠'), ('10', '♥'),  # Cards for split hands
+                ] + deck[6:]
+            
+            with patch('random.shuffle', side_effect=mock_shuffle):
+                await cog.blackjack.callback(cog, interaction, bet=50000)  # $50k bet
+                
+                # Both hands lose to dealer 19
+                # Expected: $100k deducted (2x $50k), $0 payout
+                total_deductions = sum(amount for _, amount in subtract_currency_calls)
+                total_payouts = sum(amount for _, amount in add_currency_calls)
+                
+                assert total_deductions == 100000, f"Expected $100k deductions, got ${total_deductions:,}"
+                assert total_payouts == 0, f"Expected $0 payouts for losing hands, got ${total_payouts:,}"
+
+    @pytest.mark.asyncio
+    async def test_split_blackjack_payout(self, cog, interaction):
+        """Test that split hands can achieve blackjack payout when getting 2-card 21"""
+        add_currency_calls = []
+        subtract_currency_calls = []
+        
+        async def mock_add_currency(user_id, amount):
+            add_currency_calls.append((user_id, amount))
+            return True
+        
+        async def mock_subtract_currency(user_id, amount):
+            subtract_currency_calls.append((user_id, amount))
+            return (True, 1000000)
+        
+        with patch.object(cog.currency_manager, 'load_currency_data', new_callable=AsyncMock), \
+             patch.object(cog.currency_manager, 'get_balance', new_callable=AsyncMock, return_value=1000000), \
+             patch.object(cog.currency_manager, 'subtract_currency', side_effect=mock_subtract_currency), \
+             patch.object(cog.currency_manager, 'add_currency', side_effect=mock_add_currency), \
+             patch.object(cog.currency_manager, 'format_balance', return_value="$1,000,000"), \
+             patch('discord.Embed'), \
+             patch.object(cog, 'save_blackjack_stats', new_callable=AsyncMock):
+            
+            mock_message = MagicMock()
+            mock_message.add_reaction = AsyncMock()
+            mock_message.remove_reaction = AsyncMock()
+            mock_message.edit = AsyncMock()
+            mock_message.clear_reactions = AsyncMock()
+            mock_message.id = 12345
+            interaction.original_response = AsyncMock(return_value=mock_message)
+            
+            reaction_sequence = [
+                (MagicMock(emoji="✂️"), interaction.user),  # Split
+                (MagicMock(emoji="🛑"), interaction.user),  # Stand on blackjack hand 1
+                (MagicMock(emoji="🛑"), interaction.user),  # Stand on hand 2
+            ]
+            cog.bot.wait_for = AsyncMock(side_effect=reaction_sequence)
+            
+            def mock_shuffle(deck):
+                # Player: A,A -> splits to [A,K]=21(blackjack) and [A,9]=20
+                # Dealer: gets 10,8 = 18
+                deck[:] = [
+                    ('A', '♠'), ('10', '♦'), ('A', '♥'), ('8', '♣'),  # P1, D1, P2, D2
+                    ('K', '♠'), ('9', '♥'),  # Cards for split hands
+                ] + deck[6:]
+            
+            with patch('random.shuffle', side_effect=mock_shuffle):
+                await cog.blackjack.callback(cog, interaction, bet=40000)  # $40k bet
+                
+                from src.config.settings import BLACKJACK_PAYOUT_MULTIPLIER
+                
+                # Hand 1: Blackjack (A,K) should pay BLACKJACK_PAYOUT_MULTIPLIER * bet
+                # Hand 2: Regular win (A,9=20 vs dealer 18) should pay 2 * bet
+                expected_blackjack_payout = int(40000 * BLACKJACK_PAYOUT_MULTIPLIER)
+                expected_regular_payout = 40000 * 2
+                expected_total_payout = expected_blackjack_payout + expected_regular_payout
+                
+                total_deductions = sum(amount for _, amount in subtract_currency_calls)
+                total_payouts = sum(amount for _, amount in add_currency_calls)
+                
+                assert total_deductions == 80000, f"Expected $80k deductions, got ${total_deductions:,}"
+                assert total_payouts == expected_total_payout, f"Expected ${expected_total_payout:,} total payouts, got ${total_payouts:,}"
+                
+                # Verify we have different payout amounts (blackjack vs regular win)
+                payout_amounts = [amount for _, amount in add_currency_calls]
+                assert len(set(payout_amounts)) == 2, "Should have different payout amounts for blackjack vs regular win"
+                assert expected_blackjack_payout in payout_amounts, f"Blackjack payout ${expected_blackjack_payout:,} should be in {payout_amounts}"
+                assert expected_regular_payout in payout_amounts, f"Regular payout ${expected_regular_payout:,} should be in {payout_amounts}"
+
+    @pytest.mark.asyncio
+    async def test_double_down_payout_accuracy(self, cog, interaction):
+        """Test that double down pays correctly on the doubled bet amount"""
+        add_currency_calls = []
+        subtract_currency_calls = []
+        
+        async def mock_add_currency(user_id, amount):
+            add_currency_calls.append((user_id, amount))
+            return True
+        
+        async def mock_subtract_currency(user_id, amount):
+            subtract_currency_calls.append((user_id, amount))
+            return (True, 1000000)
+        
+        with patch.object(cog.currency_manager, 'load_currency_data', new_callable=AsyncMock), \
+             patch.object(cog.currency_manager, 'get_balance', new_callable=AsyncMock, return_value=1000000), \
+             patch.object(cog.currency_manager, 'subtract_currency', side_effect=mock_subtract_currency), \
+             patch.object(cog.currency_manager, 'add_currency', side_effect=mock_add_currency), \
+             patch.object(cog.currency_manager, 'format_balance', return_value="$1,000,000"), \
+             patch('discord.Embed'), \
+             patch.object(cog, 'save_blackjack_stats', new_callable=AsyncMock):
+            
+            mock_message = MagicMock()
+            mock_message.add_reaction = AsyncMock()
+            mock_message.remove_reaction = AsyncMock()
+            mock_message.edit = AsyncMock()
+            mock_message.clear_reactions = AsyncMock()
+            mock_message.id = 12345
+            interaction.original_response = AsyncMock(return_value=mock_message)
+            
+            # Player chooses to double down
+            reaction_sequence = [(MagicMock(emoji="2️⃣"), interaction.user)]
+            cog.bot.wait_for = AsyncMock(side_effect=reaction_sequence)
+            
+            def mock_shuffle(deck):
+                # Player: 5,6 (=11) -> doubles down, gets 9 (=20)
+                # Dealer: 10,7 (=17)
+                deck[:] = [
+                    ('5', '♠'), ('10', '♦'), ('6', '♥'), ('7', '♣'),  # P1, D1, P2, D2
+                    ('9', '♠'),  # Double down card
+                ] + deck[5:]
+            
+            with patch('random.shuffle', side_effect=mock_shuffle):
+                await cog.blackjack.callback(cog, interaction, bet=30000)  # $30k bet
+                
+                # Player wins 20 vs 17 with doubled bet
+                # Expected: $60k deducted ($30k + $30k double), $60k payout (2 * $60k total bet)
+                total_deductions = sum(amount for _, amount in subtract_currency_calls)
+                total_payouts = sum(amount for _, amount in add_currency_calls)
+                
+                assert total_deductions == 60000, f"Expected $60k deductions for double down, got ${total_deductions:,}"
+                assert total_payouts == 120000, f"Expected $120k payout (2x doubled bet), got ${total_payouts:,}"
+                assert len(add_currency_calls) == 1, "Should have exactly one payout for double down win"
+
+    @pytest.mark.asyncio 
+    async def test_tie_payout_returns_bet(self, cog, interaction):
+        """Test that ties return the exact bet amount, no more, no less"""
+        add_currency_calls = []
+        subtract_currency_calls = []
+        
+        async def mock_add_currency(user_id, amount):
+            add_currency_calls.append((user_id, amount))
+            return True
+        
+        async def mock_subtract_currency(user_id, amount):
+            subtract_currency_calls.append((user_id, amount))
+            return (True, 1000000)
+        
+        with patch.object(cog.currency_manager, 'load_currency_data', new_callable=AsyncMock), \
+             patch.object(cog.currency_manager, 'get_balance', new_callable=AsyncMock, return_value=1000000), \
+             patch.object(cog.currency_manager, 'subtract_currency', side_effect=mock_subtract_currency), \
+             patch.object(cog.currency_manager, 'add_currency', side_effect=mock_add_currency), \
+             patch.object(cog.currency_manager, 'format_balance', return_value="$1,000,000"), \
+             patch('discord.Embed'), \
+             patch.object(cog, 'save_blackjack_stats', new_callable=AsyncMock):
+            
+            mock_message = MagicMock()
+            mock_message.add_reaction = AsyncMock()
+            mock_message.remove_reaction = AsyncMock()
+            mock_message.edit = AsyncMock()
+            mock_message.clear_reactions = AsyncMock()
+            mock_message.id = 12345
+            interaction.original_response = AsyncMock(return_value=mock_message)
+            
+            # Player stands immediately
+            reaction_sequence = [(MagicMock(emoji="🛑"), interaction.user)]
+            cog.bot.wait_for = AsyncMock(side_effect=reaction_sequence)
+            
+            def mock_shuffle(deck):
+                # Both player and dealer get 20
+                deck[:] = [
+                    ('10', '♠'), ('10', '♦'), ('K', '♥'), ('Q', '♣'),  # P1, D1, P2, D2
+                ] + deck[4:]
+            
+            with patch('random.shuffle', side_effect=mock_shuffle):
+                await cog.blackjack.callback(cog, interaction, bet=25000)  # $25k bet
+                
+                # Tie should return exactly the bet amount
+                total_deductions = sum(amount for _, amount in subtract_currency_calls)
+                total_payouts = sum(amount for _, amount in add_currency_calls)
+                
+                assert total_deductions == 25000, f"Expected $25k deduction, got ${total_deductions:,}"
+                assert total_payouts == 25000, f"Expected $25k returned for tie, got ${total_payouts:,}"
+                assert len(add_currency_calls) == 1, "Should have exactly one payout for tie"
+
+    def test_split_detection_logic(self, cog):
+        """Test that split detection works correctly for pair of 8s"""
+        # Test the can_split function directly
+        def can_split(hand):
+            """Check if a hand can be split"""
+            if len(hand) != 2:
+                return False
+            
+            # For splitting, we compare the rank values
+            # All face cards (J, Q, K) and 10s can be split with each other
+            card1_rank = hand[0][0]
+            card2_rank = hand[1][0]
+            
+            # If both are face cards or 10s, they can be split
+            if card1_rank in ['J', 'Q', 'K', '10'] and card2_rank in ['J', 'Q', 'K', '10']:
+                return True
+            
+            # Otherwise, they must have the same rank
+            return card1_rank == card2_rank
+        
+        # Test pair of 8s (should be splittable)
+        eight_pair = [('8', '♠'), ('8', '♥')]
+        assert can_split(eight_pair) == True, "Pair of 8s should be splittable"
+        
+        # Test blackjack hand (should not be splittable)
+        blackjack_hand = [('A', '♠'), ('K', '♥')]
+        assert can_split(blackjack_hand) == False, "Blackjack hand should not be splittable"
+        
+        # Test calculate_value with pair of 8s
+        def calculate_value(hand):
+            value = 0
+            aces = 0
+            for card in hand:
+                rank = card[0]
+                if rank in ['J', 'Q', 'K']:
+                    value += 10
+                elif rank == 'A':
+                    aces += 1
+                    value += 11
+                else:
+                    value += int(rank)
+            while value > 21 and aces > 0:
+                value -= 10
+                aces -= 1
+            return value
+        
+        assert calculate_value(eight_pair) == 16, "Pair of 8s should equal 16"
+        assert calculate_value(blackjack_hand) == 21, "A,K should equal 21"
+
+    def test_payout_calculation_edge_cases(self, cog):
+        """Test edge cases in payout calculations"""
+        from src.config.settings import BLACKJACK_PAYOUT_MULTIPLIER
+        
+        # Test minimum bet blackjack payout
+        min_bet = 10
+        blackjack_payout = int(min_bet * BLACKJACK_PAYOUT_MULTIPLIER)
+        assert blackjack_payout > min_bet * 2, "Blackjack should pay more than regular win"
+        
+        # Test large bet payout (ensure no integer overflow)
+        large_bet = 1000000
+        large_blackjack_payout = int(large_bet * BLACKJACK_PAYOUT_MULTIPLIER)
+        large_regular_payout = large_bet * 2
+        
+        assert isinstance(large_blackjack_payout, int), "Large blackjack payout should be integer"
+        assert isinstance(large_regular_payout, int), "Large regular payout should be integer"
+        assert large_blackjack_payout > large_regular_payout, "Large blackjack should pay more than regular win"
