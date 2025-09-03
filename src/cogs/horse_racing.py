@@ -579,10 +579,6 @@ class ContinueBettingView(discord.ui.View):
     @discord.ui.button(label="⏭️ Continue Betting", style=discord.ButtonStyle.primary)
     async def continue_betting(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Continue betting with remaining horses"""
-        # Disable view and clear message
-        self.disable_all_items()
-        await interaction.response.edit_message(content="⏭️ Continuing with remaining horses...", embed=None, view=self)
-        
         # Calculate how many horses we've already covered
         horses_covered = min(5, len(HORSE_STATS)) if len(HORSE_STATS) > 5 else len(HORSE_STATS)
         if len(HORSE_STATS) > 5 and len(self.current_bets) < 4:  # Account for note field taking space
@@ -590,10 +586,11 @@ class ContinueBettingView(discord.ui.View):
             
         remaining_horses = len(HORSE_STATS) - horses_covered
         if remaining_horses > 0:
+            # Send modal directly as response (this is the fix!)
             modal = RemainingHorsesModal(self.cog, self.bet_type, self.current_bets, self.current_total, horses_covered)
-            await interaction.followup.send_modal(modal)
+            await interaction.response.send_modal(modal)
         else:
-            await interaction.followup.send("❌ All horses have been covered!", ephemeral=True)
+            await interaction.response.send_message("❌ All horses have been covered!", ephemeral=True)
             
     @discord.ui.button(label="✅ Submit Current Bets", style=discord.ButtonStyle.green)
     async def submit_current(self, interaction: discord.Interaction, button: discord.ui.Button):
