@@ -1,0 +1,79 @@
+name: Release Please
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          config-file: .github/release-please-config.json
+          manifest-file: .github/release-please-manifest.json
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-artifacts:
+    runs-on: ubuntu-latest
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install UV
+        uses: astral-sh/setup-uv@v3
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run tests
+        run: uv run pytest
+
+      - name: Create distribution archives
+        run: |
+          mkdir -p dist
+          
+          # Create tar.gz archive for Unix/Linux users
+          tar -czf dist/discordbot-${{ needs.release-please.outputs.tag_name }}.tar.gz \
+            --exclude='.git*' \
+            --exclude='dist' \
+            --exclude='.pytest_cache' \
+            --exclude='__pycache__' \
+            --exclude='.env' \
+            .
+          
+          # Create zip archive for Windows users
+          zip -r dist/discordbot-${{ needs.release-please.outputs.tag_name }}.zip . \
+            -x '.git*' 'dist/*' '.pytest_cache/*' '__pycache__/*' '.env'
+
+      - name: Upload Release Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.release-please.outputs.tag_name }}
+          files: |
+            dist/discordbot-${{ needs.release-please.outputs.tag_name }}.tar.gz
+            dist/discordbot-${{ needs.release-please.outputs.tag_name }}.zip
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and Push Docker Image (Optional)
+        if: false  # Set to true if you want Docker image publishing
+        run: |
+          echo "Docker build would go here"
+          # docker build -t discordbot:${{ needs.release-please.outputs.tag_name }} .
+          # docker push discordbot:${{ needs.release-please.outputs.tag_name }}
