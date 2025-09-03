@@ -159,7 +159,7 @@ class MultiBetModal(discord.ui.Modal):
                             total_bet_amount += amount
                     except ValueError:
                         await interaction.response.send_message(
-                            f"❌ Invalid amount for {HORSE_STATS[i]['name']}: '{input_field.value}'. Please enter a valid number.",
+                            f"❌ Invalid amount for {await self.bot.horse_nickname_manager.get_horse_display_name(i)}: '{input_field.value}'. Please enter a valid number.",
                             ephemeral=True
                         )
                         return
@@ -1076,7 +1076,7 @@ class ComprehensiveMultiBetModal(discord.ui.Modal):
                         
                         # Validate bet type
                         if bet_type not in BET_TYPES:
-                            parse_errors.append(f"{HORSE_STATS[horse_index]['name']}: Invalid bet type '{bet_type}'. Use: win, place, show, last")
+                            parse_errors.append(f"{await self.bot.horse_nickname_manager.get_horse_display_name(horse_index)}: Invalid bet type '{bet_type}'. Use: win, place, show, last")
                             continue
                             
                         if amount > 0:
@@ -1215,7 +1215,7 @@ class ComprehensiveMultiBetModal(discord.ui.Modal):
 class HorseRacingCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.horse_race_manager = HorseRaceManager()
+        self.horse_race_manager = HorseRaceManager(bot.horse_nickname_manager)
         self.currency_manager = bot.currency_manager
         
         # Race state
@@ -1599,7 +1599,7 @@ class HorseRacingCog(commands.Cog):
                 return
             
             # Show horse info and bet type dropdown
-            horse_name = HORSE_STATS[horse_id - 1]["name"]
+            horse_name = await self.bot.horse_nickname_manager.get_horse_display_name(horse_id - 1)
             horse_color = HORSE_STATS[horse_id - 1]["color"]
             logger.debug(f"Selected horse: {horse_name} ({horse_color})")
             
@@ -1689,7 +1689,7 @@ class HorseRacingCog(commands.Cog):
                 return
             
             # Show horse info and bet type dropdown
-            horse_name = HORSE_STATS[horse_id - 1]["name"]
+            horse_name = await self.bot.horse_nickname_manager.get_horse_display_name(horse_id - 1)
             horse_color = HORSE_STATS[horse_id - 1]["color"]
             logger.debug(f"Selected horse: {horse_name} ({horse_color})")
             
@@ -1847,7 +1847,7 @@ class HorseRacingCog(commands.Cog):
             bet_details = []
             
             for bet in bets:
-                horse_name = HORSE_STATS[bet["horse_id"] - 1]["name"]
+                horse_name = await self.bot.horse_nickname_manager.get_horse_display_name(bet["horse_id"] - 1)
                 bet_type = bet.get("bet_type", "win")
                 bet_type_name = BET_TYPES[bet_type]["name"]
                 bet_details.append(f"🐎 **{horse_name}** - ${bet['amount']:,.2f} ({bet_type_name})")
@@ -2042,7 +2042,7 @@ class HorseRacingCog(commands.Cog):
             for i, result in enumerate(results[:3]):
                 medal = ["🥇", "🥈", "🥉"][i]
                 from src.config.settings import HORSE_STATS
-                horse_color = next(h["color"] for h in HORSE_STATS if h["name"] == result["horse_name"])
+                horse_color = HORSE_STATS[result["horse_id"] - 1]["color"]
                 result_text += f"{medal} **{result['horse_name']}** {horse_color}\n"
                 
             embed.add_field(

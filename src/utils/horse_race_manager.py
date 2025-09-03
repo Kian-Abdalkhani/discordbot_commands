@@ -112,7 +112,7 @@ class Horse:
 class HorseRaceManager:
     """Manages horse racing events, betting, and payouts"""
     
-    def __init__(self):
+    def __init__(self, nickname_manager=None):
         self.data_file = os.path.join(
             os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
             "data", "horse_racing.json"
@@ -123,6 +123,7 @@ class HorseRaceManager:
         self.betting_open = False
         self.race_lock = asyncio.Lock()
         self.last_race_start_time = None  # Track when last race was started to prevent duplicates
+        self.nickname_manager = nickname_manager
         
     async def initialize(self):
         """Initialize the horse race manager"""
@@ -300,7 +301,10 @@ class HorseRaceManager:
         """Get the current race horses with calculated odds"""
         horses = []
         for i, horse_data in enumerate(HORSE_STATS):
-            horse = Horse(horse_data, i + 1)
+            modified_horse_data = horse_data.copy()
+            if self.nickname_manager:
+                modified_horse_data["name"] = await self.nickname_manager.get_horse_display_name(i)
+            horse = Horse(modified_horse_data, i + 1)
             horses.append(horse)
         return horses
         
@@ -497,7 +501,10 @@ class HorseRaceManager:
             logger.debug("Saving current bets to file")
             await self.save_current_bets()
             
-            horse_name = HORSE_STATS[horse_id - 1]["name"]
+            if self.nickname_manager:
+                horse_name = await self.nickname_manager.get_horse_display_name(horse_id - 1)
+            else:
+                horse_name = HORSE_STATS[horse_id - 1]["name"]
             bet_name = BET_TYPES[bet_type]["name"]
             bet_description = BET_TYPES[bet_type]["description"]
             success_message = f"{bet_name} bet placed: ${amount:,.2f} on {horse_name} ({bet_description})"
@@ -554,7 +561,10 @@ class HorseRaceManager:
         
         # Show bets for each horse (ordered by horse ID)
         for horse_id in sorted(horse_bets.keys()):
-            horse_name = HORSE_STATS[horse_id - 1]['name']
+            if self.nickname_manager:
+                horse_name = await self.nickname_manager.get_horse_display_name(horse_id - 1)
+            else:
+                horse_name = HORSE_STATS[horse_id - 1]['name']
             horse_color = HORSE_STATS[horse_id - 1]['color']
             bets = horse_bets[horse_id]
             
@@ -700,7 +710,7 @@ class HorseRaceManager:
                     user_payout["total_winnings"] += winnings
                     user_payout["winning_bets"].append({
                         "horse_id": horse_id,
-                        "horse_name": HORSE_STATS[horse_id - 1]["name"],
+                        "horse_name": await self.nickname_manager.get_horse_display_name(horse_id - 1) if self.nickname_manager else HORSE_STATS[horse_id - 1]["name"],
                         "bet_amount": amount,
                         "bet_type": BET_TYPES[bet_type]["name"],
                         "winnings": winnings,
@@ -710,7 +720,7 @@ class HorseRaceManager:
                     # Losing bet
                     user_payout["losing_bets"].append({
                         "horse_id": horse_id,
-                        "horse_name": HORSE_STATS[horse_id - 1]["name"],
+                        "horse_name": await self.nickname_manager.get_horse_display_name(horse_id - 1) if self.nickname_manager else HORSE_STATS[horse_id - 1]["name"],
                         "bet_amount": amount,
                         "bet_type": BET_TYPES[bet_type]["name"]
                     })

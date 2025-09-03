@@ -117,6 +117,10 @@ HORSE_RACE_SCHEDULE = [
 
 ]
 
+# Horse Nickname Configuration
+HORSE_RENAME_COST = 10000  # Cost to rename a horse
+HORSE_RENAME_DURATION_DAYS = 7  # Number of days a horse stays renamed
+
 # Horse Stats Configuration - 8 racing horses with varied stats (favorites to longshots)
 HORSE_STATS = [
     # Strong favorites (low odds, high stats)
