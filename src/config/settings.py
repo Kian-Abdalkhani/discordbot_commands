@@ -13,7 +13,7 @@ DAILY_CLAIM = 10_000
 BLACKJACK_PAYOUT_MULTIPLIER = 2.5
 
 # Stock market leverage multiplier
-STOCK_MARKET_LEVERAGE = 20
+STOCK_MARKET_LEVERAGE = 1
 
 # Hangman daily bonus for hard difficulty wins
 HANGMAN_DAILY_BONUS = 10_000
