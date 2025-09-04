@@ -323,7 +323,7 @@ class StockMarketCog(commands.Cog):
                     if dividend_yield and dividend_yield > 0:
                         estimated_annual_dividend = current_position_value * (dividend_yield/100)
                         total_estimated_dividends += estimated_annual_dividend
-                        positions_text += f"💰 Div Yield: {dividend_yield:,.2f}% | Est Annual: ${estimated_annual_dividend:,.2f}\n"
+                        positions_text += f"💰 Div Yield: {dividend_yield:,.2f}%\n"
                     else:
                         positions_text += f"💰 No dividends\n"
                 except Exception as e:
@@ -357,7 +357,7 @@ class StockMarketCog(commands.Cog):
                 if total_estimated_dividends > 0:
                     embed.add_field(
                         name="💰 Estimated Annual Dividends",
-                        value=f"${total_estimated_dividends:.2f}",
+                        value=f"${total_estimated_dividends:,.2f}",
                         inline=True
                     )
             
