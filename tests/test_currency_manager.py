@@ -944,3 +944,225 @@ class TestCurrencyManager:
         assert total_value == 0.0
         assert total_profit_loss == 0.0
         assert details == {}
+
+    # Test Dividend Methods
+    @pytest.mark.asyncio
+    async def test_record_dividend_payment_new_user(self, async_currency_manager):
+        """Test recording dividend payment for user with no previous dividend earnings"""
+        manager = await async_currency_manager
+        
+        result = await manager.record_dividend_payment("1184766650638155877", "AAPL", 24.0, 100.0, "2024-08-09")
+        
+        assert result is True
+        
+        # Verify dividend earnings were recorded
+        user_data = await manager.get_user_data("1184766650638155877")
+        dividend_earnings = user_data["dividend_earnings"]
+        
+        assert dividend_earnings["total"] == 24.0
+        assert dividend_earnings["by_stock"]["AAPL"] == 24.0
+        assert len(dividend_earnings["payments"]) == 1
+        
+        payment = dividend_earnings["payments"][0]
+        assert payment["symbol"] == "AAPL"
+        assert payment["amount"] == 24.0
+        assert payment["shares"] == 100.0
+        assert payment["amount_per_share"] == 0.24
+        assert payment["ex_dividend_date"] == "2024-08-09"
+
+    @pytest.mark.asyncio
+    async def test_record_dividend_payment_existing_earnings(self, async_currency_manager):
+        """Test recording dividend payment for user with existing dividend earnings"""
+        manager = await async_currency_manager
+        
+        # First payment
+        await manager.record_dividend_payment("1184766650638155877", "AAPL", 24.0, 100.0, "2024-05-09")
+        
+        # Second payment (different stock)
+        await manager.record_dividend_payment("1184766650638155877", "MSFT", 37.5, 50.0, "2024-08-15")
+        
+        user_data = await manager.get_user_data("1184766650638155877")
+        dividend_earnings = user_data["dividend_earnings"]
+        
+        assert dividend_earnings["total"] == 61.5  # 24.0 + 37.5
+        assert dividend_earnings["by_stock"]["AAPL"] == 24.0
+        assert dividend_earnings["by_stock"]["MSFT"] == 37.5
+        assert len(dividend_earnings["payments"]) == 2
+
+    @pytest.mark.asyncio
+    async def test_record_dividend_payment_same_stock_multiple_times(self, async_currency_manager):
+        """Test recording multiple dividend payments for same stock"""
+        manager = await async_currency_manager
+        
+        # First AAPL dividend
+        await manager.record_dividend_payment("1184766650638155877", "AAPL", 24.0, 100.0, "2024-05-09")
+        
+        # Second AAPL dividend
+        await manager.record_dividend_payment("1184766650638155877", "AAPL", 25.0, 100.0, "2024-08-09")
+        
+        user_data = await manager.get_user_data("1184766650638155877")
+        dividend_earnings = user_data["dividend_earnings"]
+        
+        assert dividend_earnings["total"] == 49.0  # 24.0 + 25.0
+        assert dividend_earnings["by_stock"]["AAPL"] == 49.0
+        assert len(dividend_earnings["payments"]) == 2
+
+    @pytest.mark.asyncio
+    async def test_record_dividend_payment_payment_limit(self, async_currency_manager):
+        """Test that dividend payment history is limited to 50 entries"""
+        manager = await async_currency_manager
+        
+        # Add 52 payments to exceed the limit
+        for i in range(52):
+            await manager.record_dividend_payment("1184766650638155877", "TEST", 1.0, 1.0, f"2024-{i+1:02d}-01")
+        
+        user_data = await manager.get_user_data("1184766650638155877")
+        payments = user_data["dividend_earnings"]["payments"]
+        
+        # Should be limited to 50 payments
+        assert len(payments) == 50
+        
+        # Should keep the most recent payments
+        assert payments[-1]["ex_dividend_date"] == "2024-52-01"  # Most recent
+        # First entry should be the 3rd payment (1st and 2nd were removed)
+        assert payments[0]["ex_dividend_date"] == "2024-03-01"
+
+    @pytest.mark.asyncio
+    async def test_record_dividend_payment_zero_shares_edge_case(self, async_currency_manager):
+        """Test recording dividend payment with zero shares (edge case)"""
+        manager = await async_currency_manager
+        
+        result = await manager.record_dividend_payment("1184766650638155877", "AAPL", 0.0, 0.0, "2024-08-09")
+        
+        assert result is True
+        
+        user_data = await manager.get_user_data("1184766650638155877")
+        payment = user_data["dividend_earnings"]["payments"][0]
+        assert payment["amount_per_share"] == 0.0  # Should handle division by zero
+
+    @pytest.mark.asyncio
+    async def test_record_dividend_payment_error_handling(self, async_currency_manager):
+        """Test error handling in record_dividend_payment"""
+        manager = await async_currency_manager
+        
+        # Mock save_currency_data to fail
+        with patch.object(manager, 'save_currency_data', side_effect=Exception("Save failed")):
+            with patch('src.utils.currency_manager.logger.error') as mock_error:
+                result = await manager.record_dividend_payment("1184766650638155877", "AAPL", 24.0, 100.0, "2024-08-09")
+                
+                assert result is False
+                mock_error.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_get_dividend_summary_no_earnings(self, async_currency_manager):
+        """Test getting dividend summary for user with no dividend earnings"""
+        manager = await async_currency_manager
+        
+        result = await manager.get_dividend_summary("773346702257291264")  # User with no dividend earnings
+        
+        assert result["total_all_time"] == 0.0
+        assert result["total_last_30_days"] == 0.0
+        assert result["by_stock"] == {}
+        assert result["recent_payments"] == []
+        assert result["payment_count"] == 0
+
+    @pytest.mark.asyncio
+    async def test_get_dividend_summary_with_earnings(self, async_currency_manager):
+        """Test getting dividend summary for user with dividend earnings"""
+        manager = await async_currency_manager
+        
+        # Add dividend earnings
+        await manager.record_dividend_payment("1184766650638155877", "AAPL", 25.0, 100.0, "2024-08-09")
+        await manager.record_dividend_payment("1184766650638155877", "MSFT", 37.5, 50.0, "2024-08-15")
+        
+        result = await manager.get_dividend_summary("1184766650638155877")
+        
+        assert result["total_all_time"] == 62.5
+        assert result["by_stock"]["AAPL"] == 25.0
+        assert result["by_stock"]["MSFT"] == 37.5
+        assert result["payment_count"] == 2
+        assert len(result["recent_payments"]) == 2
+
+    @pytest.mark.asyncio
+    async def test_get_dividend_summary_30_day_filter(self, async_currency_manager):
+        """Test that dividend summary correctly filters payments from last 30 days"""
+        manager = await async_currency_manager
+        
+        # Add old payment
+        old_payment_date = datetime.now() - timedelta(days=45)
+        await manager.record_dividend_payment("1184766650638155877", "OLD", 10.0, 10.0, "2024-01-01")
+        
+        # Manually update payment date to be old
+        user_data = await manager.get_user_data("1184766650638155877")
+        user_data["dividend_earnings"]["payments"][0]["payment_date"] = old_payment_date.isoformat()
+        await manager.save_currency_data()
+        
+        # Add recent payment
+        await manager.record_dividend_payment("1184766650638155877", "NEW", 5.0, 5.0, "2024-08-01")
+        
+        result = await manager.get_dividend_summary("1184766650638155877")
+        
+        assert result["total_all_time"] == 15.0  # Both payments
+        assert result["total_last_30_days"] == 5.0  # Only recent payment
+
+    @pytest.mark.asyncio
+    async def test_get_dividend_summary_corrupted_date_handling(self, async_currency_manager):
+        """Test that dividend summary handles corrupted payment dates gracefully"""
+        manager = await async_currency_manager
+        
+        # Add payment with valid format
+        await manager.record_dividend_payment("1184766650638155877", "VALID", 10.0, 10.0, "2024-08-01")
+        
+        # Add payment with invalid date format
+        user_data = await manager.get_user_data("1184766650638155877")
+        user_data["dividend_earnings"]["payments"].append({
+            "symbol": "INVALID",
+            "amount": 5.0,
+            "shares": 5.0,
+            "amount_per_share": 1.0,
+            "ex_dividend_date": "2024-08-02",
+            "payment_date": "invalid_date_format"
+        })
+        user_data["dividend_earnings"]["total"] += 5.0
+        user_data["dividend_earnings"]["by_stock"]["INVALID"] = 5.0
+        await manager.save_currency_data()
+        
+        # Should handle gracefully
+        result = await manager.get_dividend_summary("1184766650638155877")
+        
+        assert result["total_all_time"] == 15.0  # Both payments counted in total
+        # total_last_30_days might not include corrupted entry, but should not crash
+        assert isinstance(result["total_last_30_days"], (int, float))
+
+    @pytest.mark.asyncio
+    async def test_get_dividend_summary_limits_recent_payments(self, async_currency_manager):
+        """Test that dividend summary limits recent_payments to last 10"""
+        manager = await async_currency_manager
+        
+        # Add 15 payments
+        for i in range(15):
+            await manager.record_dividend_payment("1184766650638155877", f"STOCK{i}", 1.0, 1.0, f"2024-{i+1:02d}-01")
+        
+        result = await manager.get_dividend_summary("1184766650638155877")
+        
+        assert result["payment_count"] == 15
+        assert len(result["recent_payments"]) == 10  # Limited to last 10
+
+    @pytest.mark.asyncio
+    async def test_get_dividend_summary_error_handling(self, async_currency_manager):
+        """Test error handling in get_dividend_summary"""
+        manager = await async_currency_manager
+        
+        # Mock get_user_data to fail
+        with patch.object(manager, 'get_user_data', side_effect=Exception("Data error")):
+            with patch('src.utils.currency_manager.logger.error') as mock_error:
+                result = await manager.get_dividend_summary("1184766650638155877")
+                
+                # Should return default values
+                assert result["total_all_time"] == 0.0
+                assert result["total_last_30_days"] == 0.0
+                assert result["by_stock"] == {}
+                assert result["recent_payments"] == []
+                assert result["payment_count"] == 0
+                
+                mock_error.assert_called_once()
