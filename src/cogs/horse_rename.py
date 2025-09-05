@@ -5,7 +5,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from src.config.settings import HORSE_STATS, HORSE_RENAME_COST, HORSE_RENAME_DURATION_DAYS,GUILD_ID
+from src.config.settings import HORSE_STATS, HORSE_RENAME_COST, HORSE_RENAME_DURATION_DAYS,GUILD_ID, TRANSACTION_TYPES
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +68,8 @@ class HorseRename(commands.Cog):
             await interaction.followup.send("❌ Failed to rename horse. Please try again later.", ephemeral=True)
             return
         
-        success, new_balance = await self.bot.currency_manager.subtract_currency(user_id_str, HORSE_RENAME_COST)
+        success, new_balance = await self.bot.currency_manager.subtract_currency(user_id_str, HORSE_RENAME_COST, command="horse_rename",
+                                                                           transaction_type=TRANSACTION_TYPES["fee"])
         if not success:
             await interaction.followup.send("❌ Failed to process payment. Please try again later.", ephemeral=True)
             return

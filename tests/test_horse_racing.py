@@ -7,7 +7,7 @@ import discord
 from discord.ext import commands
 
 from src.utils.horse_race_manager import HorseRaceManager, Horse
-from src.config.settings import HORSE_STATS, HORSE_RACE_MIN_BET, HORSE_RACE_MAX_BET, BET_TYPES, HORSE_RACE_SCHEDULE
+from src.config.settings import HORSE_STATS, HORSE_RACE_MIN_BET, HORSE_RACE_MAX_BET, HORSE_RACE_BET_TYPES, HORSE_RACE_SCHEDULE
 from src.cogs.horse_racing import HorseRacingCog, HorseSelect, BetTypeSelect, BetAmountView, BetView
 
 
@@ -422,11 +422,11 @@ class TestHorseRacingCogNewUI:
         bet_type_select = BetTypeSelect(1, 1000, cog)
         
         # Should have options for all bet types
-        assert len(bet_type_select.options) == len(BET_TYPES)
+        assert len(bet_type_select.options) == len(HORSE_RACE_BET_TYPES)
         
         # Check that all bet types are included
         option_values = [option.value for option in bet_type_select.options]
-        for bet_type in BET_TYPES.keys():
+        for bet_type in HORSE_RACE_BET_TYPES.keys():
             assert bet_type in option_values
     
     @pytest.mark.asyncio
@@ -546,10 +546,10 @@ class TestBetTypeIntegration:
         
         # Test each bet type
         with patch.object(manager, 'is_betting_time', return_value=True):
-            for bet_type in BET_TYPES.keys():
+            for bet_type in HORSE_RACE_BET_TYPES.keys():
                 success, message = await manager.place_bet("123", 1, 1000, bet_type)
                 assert success, f"Bet type {bet_type} should be supported"
-                assert bet_type.lower() in message.lower() or BET_TYPES[bet_type]["name"].lower() in message.lower()
+                assert bet_type.lower() in message.lower() or HORSE_RACE_BET_TYPES[bet_type]["name"].lower() in message.lower()
     
     @pytest.mark.asyncio 
     async def test_invalid_bet_type(self):

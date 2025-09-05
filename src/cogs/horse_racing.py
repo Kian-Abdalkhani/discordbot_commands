@@ -5,7 +5,7 @@ from discord import app_commands
 import logging
 from datetime import datetime, timedelta
 
-from src.config.settings import GUILD_ID, HORSE_RACE_UPDATE_INTERVAL, HORSE_RACE_DURATION, HORSE_RACE_ALLOW_ADMIN_START, HORSE_RACE_SCHEDULE,HORSE_RACE_CHANNEL_ID, BET_TYPES, HORSE_STATS
+from src.config.settings import GUILD_ID, HORSE_RACE_UPDATE_INTERVAL, HORSE_RACE_DURATION, HORSE_RACE_ALLOW_ADMIN_START, HORSE_RACE_SCHEDULE,HORSE_RACE_CHANNEL_ID, HORSE_RACE_BET_TYPES, HORSE_STATS, TRANSACTION_TYPES
 from src.utils.horse_race_manager import HorseRaceManager
 
 logger = logging.getLogger(__name__)
@@ -51,7 +51,7 @@ class BetTypeSelect(discord.ui.Select):
         self.cog = cog
         
         options = []
-        for bet_type, config in BET_TYPES.items():
+        for bet_type, config in HORSE_RACE_BET_TYPES.items():
             options.append(discord.SelectOption(
                 label=config["name"],
                 description=config["description"],
@@ -207,7 +207,8 @@ class MultiBetModal(discord.ui.Modal):
             
             if successful_bets:
                 # Deduct currency for successful bets
-                await self.cog.currency_manager.subtract_currency(user_id, total_deducted)
+                await self.cog.currency_manager.subtract_currency(user_id, total_deducted, command="horserace_bet", 
+                                                                 transaction_type=TRANSACTION_TYPES["gambling"], profit_loss=-total_deducted)
                 
                 # Create success response
                 embed = discord.Embed(
@@ -218,7 +219,7 @@ class MultiBetModal(discord.ui.Modal):
                 bet_summary = ""
                 for bet in successful_bets:
                     horse_name = HORSE_STATS[bet['horse_id'] - 1]['name']
-                    bet_type_name = BET_TYPES[bet['bet_type']]['name']
+                    bet_type_name = HORSE_RACE_BET_TYPES[bet['bet_type']]['name']
                     bet_summary += f"• {horse_name}: ${bet['amount']:,.2f} ({bet_type_name})\n"
                 
                 embed.add_field(
@@ -315,7 +316,7 @@ class CleanMultiBetView(discord.ui.View):
 class BetTypeModal(discord.ui.Modal):
     """Modal for placing bets on all horses for a specific bet type"""
     def __init__(self, cog, bet_type):
-        bet_config = BET_TYPES[bet_type]
+        bet_config = HORSE_RACE_BET_TYPES[bet_type]
         super().__init__(title=f"🏇 {bet_config['name']} Bets - All Horses", timeout=600)
         self.cog = cog
         self.bet_type = bet_type
@@ -399,7 +400,7 @@ class BetTypeModal(discord.ui.Modal):
                 # No bets for this set, but check if there are more horses
                 if len(HORSE_STATS) > len(self.horse_inputs):
                     embed = discord.Embed(
-                        title=f"Continue with {BET_TYPES[self.bet_type]['name']} Bets?",
+                        title=f"Continue with {HORSE_RACE_BET_TYPES[self.bet_type]['name']} Bets?",
                         description=f"No bets entered for horses 1-{len(self.horse_inputs)}.\nContinue with horses {len(self.horse_inputs)+1}-{len(HORSE_STATS)}?",
                         color=0x0099ff
                     )
@@ -407,7 +408,7 @@ class BetTypeModal(discord.ui.Modal):
                     await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
                 else:
                     await interaction.response.send_message(
-                        f"❌ No {BET_TYPES[self.bet_type]['name']} bets entered. Please enter at least one bet amount.",
+                        f"❌ No {HORSE_RACE_BET_TYPES[self.bet_type]['name']} bets entered. Please enter at least one bet amount.",
                         ephemeral=True
                     )
                 return
@@ -415,7 +416,7 @@ class BetTypeModal(discord.ui.Modal):
             # If there are more horses, show continue option
             if len(HORSE_STATS) > len(self.horse_inputs):
                 embed = discord.Embed(
-                    title=f"✅ {len(parsed_bets)} {BET_TYPES[self.bet_type]['name']} Bets Configured",
+                    title=f"✅ {len(parsed_bets)} {HORSE_RACE_BET_TYPES[self.bet_type]['name']} Bets Configured",
                     description=(
                         f"**Current Bets:** ${total_bet_amount:,.2f} total\n\n"
                         f"Continue with horses {len(self.horse_inputs)+1}-{len(HORSE_STATS)} or submit current bets?"
@@ -446,12 +447,12 @@ class BetTypeModal(discord.ui.Modal):
             try:
                 if not interaction.response.is_done():
                     await interaction.response.send_message(
-                        f"❌ Error processing {BET_TYPES[self.bet_type]['name']} bets. Please try again!",
+                        f"❌ Error processing {HORSE_RACE_BET_TYPES[self.bet_type]['name']} bets. Please try again!",
                         ephemeral=True
                     )
                 else:
                     await interaction.followup.send(
-                        f"❌ Error processing {BET_TYPES[self.bet_type]['name']} bets. Please try again!",
+                        f"❌ Error processing {HORSE_RACE_BET_TYPES[self.bet_type]['name']} bets. Please try again!",
                         ephemeral=True
                     )
             except Exception as error_response_error:
@@ -486,11 +487,12 @@ class BetTypeModal(discord.ui.Modal):
             if successful_bets:
                 # Deduct currency for successful bets
                 total_deducted = sum(bet['amount'] for bet in successful_bets)
-                await self.cog.currency_manager.subtract_currency(user_id, total_deducted)
+                await self.cog.currency_manager.subtract_currency(user_id, total_deducted, command="horserace_bet", 
+                                                                 transaction_type=TRANSACTION_TYPES["gambling"], profit_loss=-total_deducted)
                 
                 # Create detailed response
                 embed = discord.Embed(
-                    title=f"✅ {BET_TYPES[self.bet_type]['name']} Bets Placed Successfully!",
+                    title=f"✅ {HORSE_RACE_BET_TYPES[self.bet_type]['name']} Bets Placed Successfully!",
                     color=0x00ff00
                 )
                 
@@ -511,7 +513,7 @@ class BetTypeModal(discord.ui.Modal):
                     bet_summary += f"• {horse_color} {horse_name}: ${bet['amount']:,.2f} → ${potential_winnings:,.2f}\n"
                 
                 embed.add_field(
-                    name=f"🎯 {BET_TYPES[self.bet_type]['name']} Bets & Potential Winnings",
+                    name=f"🎯 {HORSE_RACE_BET_TYPES[self.bet_type]['name']} Bets & Potential Winnings",
                     value=bet_summary,
                     inline=False
                 )
@@ -521,7 +523,7 @@ class BetTypeModal(discord.ui.Modal):
                     value=(
                         f"**Total Bet:** ${total_deducted:,.2f}\n"
                         f"**Max Potential:** ${total_potential_winnings:,.2f}\n"
-                        f"**Bet Type:** {BET_TYPES[self.bet_type]['description']}"
+                        f"**Bet Type:** {HORSE_RACE_BET_TYPES[self.bet_type]['description']}"
                     ),
                     inline=True
                 )
@@ -548,7 +550,7 @@ class BetTypeModal(discord.ui.Modal):
                 await interaction.response.send_message(embed=embed, ephemeral=True)
             else:
                 # All bets failed
-                error_summary = f"❌ **All {BET_TYPES[self.bet_type]['name']} bets failed:**\n"
+                error_summary = f"❌ **All {HORSE_RACE_BET_TYPES[self.bet_type]['name']} bets failed:**\n"
                 for failed in failed_bets:
                     horse_name = HORSE_STATS[failed['bet']['horse_id'] - 1]['name']
                     error_summary += f"• {horse_name}: {failed['error']}\n"
@@ -558,7 +560,7 @@ class BetTypeModal(discord.ui.Modal):
         except Exception as e:
             logger.error(f"Error processing final {self.bet_type} bets: {e}", exc_info=True)
             await interaction.response.send_message(
-                f"❌ Error processing {BET_TYPES[self.bet_type]['name']} bets. Please try again!",
+                f"❌ Error processing {HORSE_RACE_BET_TYPES[self.bet_type]['name']} bets. Please try again!",
                 ephemeral=True
             )
 
@@ -601,7 +603,7 @@ class ContinueBettingView(discord.ui.View):
         
         if not self.current_bets:
             await interaction.followup.send(
-                f"❌ No {BET_TYPES[self.bet_type]['name']} bets to submit!",
+                f"❌ No {HORSE_RACE_BET_TYPES[self.bet_type]['name']} bets to submit!",
                 ephemeral=True
             )
             return
@@ -615,7 +617,7 @@ class ContinueBettingView(discord.ui.View):
         # Disable view and clear message
         self.disable_all_items()
         await interaction.response.edit_message(
-            content=f"❌ {BET_TYPES[self.bet_type]['name']} betting cancelled.",
+            content=f"❌ {HORSE_RACE_BET_TYPES[self.bet_type]['name']} betting cancelled.",
             embed=None, 
             view=self
         )
@@ -649,11 +651,12 @@ class ContinueBettingView(discord.ui.View):
             if successful_bets:
                 # Deduct currency for successful bets
                 total_deducted = sum(bet['amount'] for bet in successful_bets)
-                await self.cog.currency_manager.subtract_currency(user_id, total_deducted)
+                await self.cog.currency_manager.subtract_currency(user_id, total_deducted, command="horserace_bet", 
+                                                                 transaction_type=TRANSACTION_TYPES["gambling"], profit_loss=-total_deducted)
                 
                 # Create detailed response
                 embed = discord.Embed(
-                    title=f"✅ {BET_TYPES[self.bet_type]['name']} Bets Placed Successfully!",
+                    title=f"✅ {HORSE_RACE_BET_TYPES[self.bet_type]['name']} Bets Placed Successfully!",
                     color=0x00ff00
                 )
                 
@@ -674,7 +677,7 @@ class ContinueBettingView(discord.ui.View):
                     bet_summary += f"• {horse_color} {horse_name}: ${bet['amount']:,.2f} → ${potential_winnings:,.2f}\n"
                 
                 embed.add_field(
-                    name=f"🎯 {BET_TYPES[self.bet_type]['name']} Bets & Potential Winnings",
+                    name=f"🎯 {HORSE_RACE_BET_TYPES[self.bet_type]['name']} Bets & Potential Winnings",
                     value=bet_summary,
                     inline=False
                 )
@@ -684,7 +687,7 @@ class ContinueBettingView(discord.ui.View):
                     value=(
                         f"**Total Bet:** ${total_deducted:,.2f}\n"
                         f"**Max Potential:** ${total_potential_winnings:,.2f}\n"
-                        f"**Bet Type:** {BET_TYPES[self.bet_type]['description']}"
+                        f"**Bet Type:** {HORSE_RACE_BET_TYPES[self.bet_type]['description']}"
                     ),
                     inline=True
                 )
@@ -711,7 +714,7 @@ class ContinueBettingView(discord.ui.View):
                 await interaction.followup.send(embed=embed, ephemeral=True)
             else:
                 # All bets failed
-                error_summary = f"❌ **All {BET_TYPES[self.bet_type]['name']} bets failed:**\n"
+                error_summary = f"❌ **All {HORSE_RACE_BET_TYPES[self.bet_type]['name']} bets failed:**\n"
                 for failed in failed_bets:
                     horse_name = HORSE_STATS[failed['bet']['horse_id'] - 1]['name']
                     error_summary += f"• {horse_name}: {failed['error']}\n"
@@ -721,7 +724,7 @@ class ContinueBettingView(discord.ui.View):
         except Exception as e:
             logger.error(f"Error processing final {self.bet_type} bets: {e}", exc_info=True)
             await interaction.followup.send(
-                f"❌ Error processing {BET_TYPES[self.bet_type]['name']} bets. Please try again!",
+                f"❌ Error processing {HORSE_RACE_BET_TYPES[self.bet_type]['name']} bets. Please try again!",
                 ephemeral=True
             )
         
@@ -754,11 +757,12 @@ class ContinueBettingView(discord.ui.View):
             if successful_bets:
                 # Deduct currency for successful bets
                 total_deducted = sum(bet['amount'] for bet in successful_bets)
-                await self.cog.currency_manager.subtract_currency(user_id, total_deducted)
+                await self.cog.currency_manager.subtract_currency(user_id, total_deducted, command="horserace_bet", 
+                                                                 transaction_type=TRANSACTION_TYPES["gambling"], profit_loss=-total_deducted)
                 
                 # Create detailed response
                 embed = discord.Embed(
-                    title=f"✅ {BET_TYPES[self.bet_type]['name']} Bets Placed Successfully!",
+                    title=f"✅ {HORSE_RACE_BET_TYPES[self.bet_type]['name']} Bets Placed Successfully!",
                     color=0x00ff00
                 )
                 
@@ -779,7 +783,7 @@ class ContinueBettingView(discord.ui.View):
                     bet_summary += f"• {horse_color} {horse_name}: ${bet['amount']:,.2f} → ${potential_winnings:,.2f}\n"
                 
                 embed.add_field(
-                    name=f"🎯 {BET_TYPES[self.bet_type]['name']} Bets & Potential Winnings",
+                    name=f"🎯 {HORSE_RACE_BET_TYPES[self.bet_type]['name']} Bets & Potential Winnings",
                     value=bet_summary,
                     inline=False
                 )
@@ -789,7 +793,7 @@ class ContinueBettingView(discord.ui.View):
                     value=(
                         f"**Total Bet:** ${total_deducted:,.2f}\n"
                         f"**Max Potential:** ${total_potential_winnings:,.2f}\n"
-                        f"**Bet Type:** {BET_TYPES[self.bet_type]['description']}"
+                        f"**Bet Type:** {HORSE_RACE_BET_TYPES[self.bet_type]['description']}"
                     ),
                     inline=True
                 )
@@ -816,7 +820,7 @@ class ContinueBettingView(discord.ui.View):
                 await interaction.response.send_message(embed=embed, ephemeral=True)
             else:
                 # All bets failed
-                error_summary = f"❌ **All {BET_TYPES[self.bet_type]['name']} bets failed:**\n"
+                error_summary = f"❌ **All {HORSE_RACE_BET_TYPES[self.bet_type]['name']} bets failed:**\n"
                 for failed in failed_bets:
                     horse_name = HORSE_STATS[failed['bet']['horse_id'] - 1]['name']
                     error_summary += f"• {horse_name}: {failed['error']}\n"
@@ -826,14 +830,14 @@ class ContinueBettingView(discord.ui.View):
         except Exception as e:
             logger.error(f"Error processing final {self.bet_type} bets: {e}", exc_info=True)
             await interaction.response.send_message(
-                f"❌ Error processing {BET_TYPES[self.bet_type]['name']} bets. Please try again!",
+                f"❌ Error processing {HORSE_RACE_BET_TYPES[self.bet_type]['name']} bets. Please try again!",
                 ephemeral=True
             )
 
 class RemainingHorsesModal(discord.ui.Modal):
     """Modal for betting on remaining horses"""
     def __init__(self, cog, bet_type, existing_bets, existing_total, start_index):
-        bet_config = BET_TYPES[bet_type]
+        bet_config = HORSE_RACE_BET_TYPES[bet_type]
         remaining_count = len(HORSE_STATS) - start_index
         super().__init__(title=f"🏇 {bet_config['name']} - Horses {start_index+1}-{len(HORSE_STATS)}", timeout=600)
         self.cog = cog
@@ -904,7 +908,7 @@ class RemainingHorsesModal(discord.ui.Modal):
             
             if not all_bets:
                 await interaction.response.send_message(
-                    f"❌ No {BET_TYPES[self.bet_type]['name']} bets configured!",
+                    f"❌ No {HORSE_RACE_BET_TYPES[self.bet_type]['name']} bets configured!",
                     ephemeral=True
                 )
                 return
@@ -915,7 +919,7 @@ class RemainingHorsesModal(discord.ui.Modal):
         except Exception as e:
             logger.error(f"Error in remaining horses {self.bet_type} modal: {e}", exc_info=True)
             await interaction.response.send_message(
-                f"❌ Error processing remaining {BET_TYPES[self.bet_type]['name']} bets. Please try again!",
+                f"❌ Error processing remaining {HORSE_RACE_BET_TYPES[self.bet_type]['name']} bets. Please try again!",
                 ephemeral=True
             )
             
@@ -948,11 +952,12 @@ class RemainingHorsesModal(discord.ui.Modal):
             if successful_bets:
                 # Deduct currency for successful bets
                 total_deducted = sum(bet['amount'] for bet in successful_bets)
-                await self.cog.currency_manager.subtract_currency(user_id, total_deducted)
+                await self.cog.currency_manager.subtract_currency(user_id, total_deducted, command="horserace_bet", 
+                                                                 transaction_type=TRANSACTION_TYPES["gambling"], profit_loss=-total_deducted)
                 
                 # Create detailed response
                 embed = discord.Embed(
-                    title=f"✅ {BET_TYPES[self.bet_type]['name']} Bets Placed Successfully!",
+                    title=f"✅ {HORSE_RACE_BET_TYPES[self.bet_type]['name']} Bets Placed Successfully!",
                     color=0x00ff00
                 )
                 
@@ -973,7 +978,7 @@ class RemainingHorsesModal(discord.ui.Modal):
                     bet_summary += f"• {horse_color} {horse_name}: ${bet['amount']:,.2f} → ${potential_winnings:,.2f}\n"
                 
                 embed.add_field(
-                    name=f"🎯 Complete {BET_TYPES[self.bet_type]['name']} Bets & Potential Winnings",
+                    name=f"🎯 Complete {HORSE_RACE_BET_TYPES[self.bet_type]['name']} Bets & Potential Winnings",
                     value=bet_summary,
                     inline=False
                 )
@@ -983,7 +988,7 @@ class RemainingHorsesModal(discord.ui.Modal):
                     value=(
                         f"**Total Bet:** ${total_deducted:,.2f}\n"
                         f"**Max Potential:** ${total_potential_winnings:,.2f}\n"
-                        f"**Bet Type:** {BET_TYPES[self.bet_type]['description']}"
+                        f"**Bet Type:** {HORSE_RACE_BET_TYPES[self.bet_type]['description']}"
                     ),
                     inline=True
                 )
@@ -1010,7 +1015,7 @@ class RemainingHorsesModal(discord.ui.Modal):
                 await interaction.response.send_message(embed=embed, ephemeral=True)
             else:
                 # All bets failed
-                error_summary = f"❌ **All {BET_TYPES[self.bet_type]['name']} bets failed:**\n"
+                error_summary = f"❌ **All {HORSE_RACE_BET_TYPES[self.bet_type]['name']} bets failed:**\n"
                 for failed in failed_bets:
                     horse_name = HORSE_STATS[failed['bet']['horse_id'] - 1]['name']
                     error_summary += f"• {horse_name}: {failed['error']}\n"
@@ -1020,7 +1025,7 @@ class RemainingHorsesModal(discord.ui.Modal):
         except Exception as e:
             logger.error(f"Error processing final {self.bet_type} bets: {e}", exc_info=True)
             await interaction.response.send_message(
-                f"❌ Error processing {BET_TYPES[self.bet_type]['name']} bets. Please try again!",
+                f"❌ Error processing {HORSE_RACE_BET_TYPES[self.bet_type]['name']} bets. Please try again!",
                 ephemeral=True
             )
 
@@ -1072,7 +1077,7 @@ class ComprehensiveMultiBetModal(discord.ui.Modal):
                         bet_type = parts[1].strip().lower() if len(parts) > 1 else 'win'
                         
                         # Validate bet type
-                        if bet_type not in BET_TYPES:
+                        if bet_type not in HORSE_RACE_BET_TYPES:
                             parse_errors.append(f"{await self.bot.horse_nickname_manager.get_horse_display_name(horse_index)}: Invalid bet type '{bet_type}'. Use: win, place, show, last")
                             continue
                             
@@ -1127,7 +1132,8 @@ class ComprehensiveMultiBetModal(discord.ui.Modal):
             if successful_bets:
                 # Deduct currency for successful bets
                 total_deducted = sum(bet['amount'] for bet in successful_bets)
-                await self.cog.currency_manager.subtract_currency(user_id, total_deducted)
+                await self.cog.currency_manager.subtract_currency(user_id, total_deducted, command="horserace_bet", 
+                                                                 transaction_type=TRANSACTION_TYPES["gambling"], profit_loss=-total_deducted)
                 
                 # Create detailed response with potential winnings
                 embed = discord.Embed(
@@ -1142,7 +1148,7 @@ class ComprehensiveMultiBetModal(discord.ui.Modal):
                 for bet in successful_bets:
                     horse_name = HORSE_STATS[bet['horse_id'] - 1]['name']
                     horse_color = HORSE_STATS[bet['horse_id'] - 1]['color']
-                    bet_type_name = BET_TYPES[bet['bet_type']]['name']
+                    bet_type_name = HORSE_RACE_BET_TYPES[bet['bet_type']]['name']
                     
                     # Calculate potential winnings
                     potential_winnings = self.cog.horse_race_manager.calculate_potential_winnings(
@@ -1472,7 +1478,8 @@ class HorseRacingCog(commands.Cog):
             
             if success:
                 # Subtract bet amount from user's balance
-                await self.currency_manager.subtract_currency(user_id, amount)
+                await self.currency_manager.subtract_currency(user_id, amount, command="horserace_bet",
+                                                     transaction_type=TRANSACTION_TYPES["gambling"], profit_loss=-amount)
                 
                 embed = discord.Embed(
                     title="✅ Bet Placed Successfully!",
@@ -1611,7 +1618,7 @@ class HorseRacingCog(commands.Cog):
             horses = await self.horse_race_manager.get_current_horses()
             odds_info = ""
             
-            for bet_type, config in BET_TYPES.items():
+            for bet_type, config in HORSE_RACE_BET_TYPES.items():
                 try:
                     odds = self.horse_race_manager.calculate_payout_odds(horses, bet_type)
                     payout_multiplier = odds[horse_id]
@@ -1701,7 +1708,7 @@ class HorseRacingCog(commands.Cog):
             horses = await self.horse_race_manager.get_current_horses()
             odds_info = ""
             
-            for bet_type, config in BET_TYPES.items():
+            for bet_type, config in HORSE_RACE_BET_TYPES.items():
                 try:
                     odds = self.horse_race_manager.calculate_payout_odds(horses, bet_type)
                     payout_multiplier = odds[horse_id]
@@ -1770,7 +1777,8 @@ class HorseRacingCog(commands.Cog):
             if success:
                 # Subtract bet amount from user's balance
                 logger.debug(f"Subtracting {amount} from user {user_id} balance")
-                await self.currency_manager.subtract_currency(user_id, amount)
+                await self.currency_manager.subtract_currency(user_id, amount, command="horserace_bet",
+                                                     transaction_type=TRANSACTION_TYPES["gambling"], profit_loss=-amount)
                 
                 embed = discord.Embed(
                     title="✅ Bet Placed Successfully!",
@@ -1846,7 +1854,7 @@ class HorseRacingCog(commands.Cog):
             for bet in bets:
                 horse_name = await self.bot.horse_nickname_manager.get_horse_display_name(bet["horse_id"] - 1)
                 bet_type = bet.get("bet_type", "win")
-                bet_type_name = BET_TYPES[bet_type]["name"]
+                bet_type_name = HORSE_RACE_BET_TYPES[bet_type]["name"]
                 bet_details.append(f"🐎 **{horse_name}** - ${bet['amount']:,.2f} ({bet_type_name})")
                 total_bet += bet['amount']
                 
@@ -2058,7 +2066,9 @@ class HorseRacingCog(commands.Cog):
                 for user_id, payout_info in payouts.items():
                     if payout_info["total_winnings"] > 0:
                         # Add winnings to user's balance
-                        await self.currency_manager.add_currency(user_id, payout_info["total_winnings"])
+                        net_profit = payout_info["total_winnings"] - payout_info.get("total_bets", payout_info["total_winnings"])
+                        await self.currency_manager.add_currency(user_id, payout_info["total_winnings"], command="horserace_win",
+                                                                transaction_type=TRANSACTION_TYPES["gambling"], profit_loss=net_profit)
                         
                         user = self.bot.get_user(int(user_id))
                         username = user.display_name if user else f"User {user_id}"
@@ -2144,7 +2154,7 @@ class HorseRacingCog(commands.Cog):
             bet_info = ""
             horses = await self.horse_race_manager.get_current_horses()
             
-            for bet_type, config in BET_TYPES.items():
+            for bet_type, config in HORSE_RACE_BET_TYPES.items():
                 odds = self.horse_race_manager.calculate_payout_odds(horses, bet_type)
                 avg_odds = sum(odds.values()) / len(odds)
                 bet_info += f"**{config['name']}**: {config['description']} (Avg: {avg_odds:.1f}x)\n"

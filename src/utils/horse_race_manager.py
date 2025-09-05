@@ -11,7 +11,7 @@ import discord
 from src.config.settings import (
     HORSE_STATS, HORSE_RACE_MIN_BET, HORSE_RACE_MAX_BET,
     HORSE_RACE_HOUSE_EDGE, HORSE_RACE_DURATION, HORSE_RANDOM_VARIATION, HORSE_RACE_UPDATE_INTERVAL,
-    HORSE_RACE_TRACK_LENGTH, HORSE_RACE_SCHEDULE, BET_TYPES, HORSE_RACE_BET_WINDOW
+    HORSE_RACE_TRACK_LENGTH, HORSE_RACE_SCHEDULE, HORSE_RACE_BET_TYPES, HORSE_RACE_BET_WINDOW
 )
 
 logger = logging.getLogger(__name__)
@@ -323,7 +323,7 @@ class HorseRaceManager:
             logger.debug(f"Normalized probabilities: {normalized_probs}")
             
             # Get bet type configuration
-            if bet_type not in BET_TYPES:
+            if bet_type not in HORSE_RACE_BET_TYPES:
                 logger.error(f"Invalid bet_type: {bet_type}")
                 bet_type = "win"  # Fallback to win
             
@@ -390,8 +390,8 @@ class HorseRaceManager:
             if horse_id < 1 or horse_id > len(HORSE_STATS):
                 return False, f"Invalid horse ID! Choose 1-{len(HORSE_STATS)}"
                 
-            if bet_type not in BET_TYPES:
-                return False, f"Invalid bet type! Choose from: {', '.join(BET_TYPES.keys())}"
+            if bet_type not in HORSE_RACE_BET_TYPES:
+                return False, f"Invalid bet type! Choose from: {', '.join(HORSE_RACE_BET_TYPES.keys())}"
                 
             return True, "Bet is valid"
             
@@ -473,9 +473,9 @@ class HorseRaceManager:
                 logger.warning(f"User {user_id} invalid horse_id: {horse_id}")
                 return False, f"Invalid horse ID! Choose 1-{len(HORSE_STATS)}"
                 
-            if bet_type not in BET_TYPES:
+            if bet_type not in HORSE_RACE_BET_TYPES:
                 logger.warning(f"User {user_id} invalid bet_type: {bet_type}")
-                return False, f"Invalid bet type! Choose from: {', '.join(BET_TYPES.keys())}"
+                return False, f"Invalid bet type! Choose from: {', '.join(HORSE_RACE_BET_TYPES.keys())}"
                 
             # Initialize current race if needed
             if not hasattr(self, 'current_bets'):
@@ -505,8 +505,8 @@ class HorseRaceManager:
                 horse_name = await self.nickname_manager.get_horse_display_name(horse_id - 1)
             else:
                 horse_name = HORSE_STATS[horse_id - 1]["name"]
-            bet_name = BET_TYPES[bet_type]["name"]
-            bet_description = BET_TYPES[bet_type]["description"]
+            bet_name = HORSE_RACE_BET_TYPES[bet_type]["name"]
+            bet_description = HORSE_RACE_BET_TYPES[bet_type]["description"]
             success_message = f"{bet_name} bet placed: ${amount:,.2f} on {horse_name} ({bet_description})"
             
             logger.info(f"Bet successfully placed for user {user_id}: {success_message}")
@@ -575,7 +575,7 @@ class HorseRaceManager:
             
             # Show individual bets with bet type
             for bet in bets:
-                bet_type_name = BET_TYPES[bet['bet_type']]['name']
+                bet_type_name = HORSE_RACE_BET_TYPES[bet['bet_type']]['name']
                 # Show last 4 digits of user ID for privacy
                 summary_lines.append(f"  • User {bet['user_id'][-4:]}: ${bet['amount']:,.2f} ({bet_type_name})")
             
@@ -712,7 +712,7 @@ class HorseRaceManager:
                         "horse_id": horse_id,
                         "horse_name": await self.nickname_manager.get_horse_display_name(horse_id - 1) if self.nickname_manager else HORSE_STATS[horse_id - 1]["name"],
                         "bet_amount": amount,
-                        "bet_type": BET_TYPES[bet_type]["name"],
+                        "bet_type": HORSE_RACE_BET_TYPES[bet_type]["name"],
                         "winnings": winnings,
                         "odds": odds[horse_id]
                     })
@@ -722,7 +722,7 @@ class HorseRaceManager:
                         "horse_id": horse_id,
                         "horse_name": await self.nickname_manager.get_horse_display_name(horse_id - 1) if self.nickname_manager else HORSE_STATS[horse_id - 1]["name"],
                         "bet_amount": amount,
-                        "bet_type": BET_TYPES[bet_type]["name"]
+                        "bet_type": HORSE_RACE_BET_TYPES[bet_type]["name"]
                     })
                     
             payouts[user_id] = user_payout
@@ -731,7 +731,7 @@ class HorseRaceManager:
     
     def _check_bet_win(self, horse_id: int, bet_type: str, results: List[Dict]) -> bool:
         """Check if a bet wins based on the bet type and race results"""
-        bet_config = BET_TYPES[bet_type]
+        bet_config = HORSE_RACE_BET_TYPES[bet_type]
         
         # Find the horse's finishing position
         horse_position = None
@@ -927,7 +927,7 @@ class HorseRaceManager:
                             bet_types[bet_type].append(bet)
                         
                         for bet_type, type_bets in bet_types.items():
-                            bet_name = BET_TYPES[bet_type]['name']
+                            bet_name = HORSE_RACE_BET_TYPES[bet_type]['name']
                             bets_info += f"  {bet_name}: "
                             bet_strings = []
                             for bet in type_bets:
@@ -960,7 +960,7 @@ class HorseRaceManager:
         
         # Add bet type explanations
         bet_explanations = ""
-        for bet_type, config in BET_TYPES.items():
+        for bet_type, config in HORSE_RACE_BET_TYPES.items():
             bet_explanations += f"**{config['name']}**: {config['description']}\n"
         
         embed.add_field(
