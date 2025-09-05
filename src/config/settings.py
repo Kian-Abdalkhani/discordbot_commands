@@ -84,6 +84,10 @@ HANGMAN_WORD_LISTS = {
 HORSE_RACE_MIN_BET = 100
 HORSE_RACE_MAX_BET = 1_000_000
 HORSE_RACE_HOUSE_EDGE = 0.05  # 5% house edge on odds
+HORSE_ODDS_CURVE_STRENGTH = 5  # Higher = more skewed odds (1.0 = linear, 2.0+ = exponential)
+HORSE_ODDS_MIN_MULTIPLIER = 1.2  # Minimum payout for favorites
+HORSE_ODDS_MAX_MULTIPLIER = 25.0  # Maximum payout for longshots
+HORSE_PROBABILITY_FLOOR = 0.005   # Minimum probability (prevents infinite odds)
 HORSE_RACE_DURATION = 120  # Race animation duration in seconds (2 minutes) - dynamic system allows for more varied finish times
 HORSE_RACE_UPDATE_INTERVAL = 1.0  # Update race progress every 1 second for smoother animation
 HORSE_RACE_TRACK_LENGTH = 1200  # Track length in meters

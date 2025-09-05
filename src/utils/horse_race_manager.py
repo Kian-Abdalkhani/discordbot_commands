@@ -11,7 +11,8 @@ import discord
 from src.config.settings import (
     HORSE_STATS, HORSE_RACE_MIN_BET, HORSE_RACE_MAX_BET,
     HORSE_RACE_HOUSE_EDGE, HORSE_RACE_DURATION, HORSE_RANDOM_VARIATION, HORSE_RACE_UPDATE_INTERVAL,
-    HORSE_RACE_TRACK_LENGTH, HORSE_RACE_SCHEDULE, HORSE_RACE_BET_TYPES, HORSE_RACE_BET_WINDOW
+    HORSE_RACE_TRACK_LENGTH, HORSE_RACE_SCHEDULE, HORSE_RACE_BET_TYPES, HORSE_RACE_BET_WINDOW,
+    HORSE_ODDS_CURVE_STRENGTH, HORSE_ODDS_MIN_MULTIPLIER, HORSE_ODDS_MAX_MULTIPLIER, HORSE_PROBABILITY_FLOOR
 )
 
 logger = logging.getLogger(__name__)
@@ -309,25 +310,39 @@ class HorseRaceManager:
         return horses
         
     def calculate_payout_odds(self, horses: List[Horse], bet_type: str = "win") -> Dict[int, float]:
-        """Calculate payout odds for each horse with proper house edge and realistic odds"""
+        """Calculate payout odds for each horse with logarithmic curve for more realistic odds spread"""
         try:
             logger.debug(f"Calculating payout odds for bet_type: {bet_type}")
             
-            # Get true probabilities based on horse stats
-            probabilities = [horse.calculate_odds() for horse in horses]
-            total_prob = sum(probabilities)
-            logger.debug(f"Raw probabilities sum: {total_prob}")
+            # Get base stats-based scores using existing horse.calculate_odds() method
+            raw_scores = [horse.calculate_odds() for horse in horses]
+            logger.debug(f"Raw horse scores: {raw_scores}")
             
-            # Normalize probabilities to ensure they sum to 1
-            normalized_probs = [p / total_prob for p in probabilities]
-            logger.debug(f"Normalized probabilities: {normalized_probs}")
+            # Apply exponential curve to amplify differences between horses
+            exponential_scores = [score ** HORSE_ODDS_CURVE_STRENGTH for score in raw_scores]
+            logger.debug(f"Exponential scores (strength={HORSE_ODDS_CURVE_STRENGTH}): {exponential_scores}")
+            
+            # Convert exponential scores directly to probabilities with floor to prevent extreme odds
+            total_exponential_score = sum(exponential_scores)
+            logger.debug(f"Total exponential score: {total_exponential_score}")
+            
+            base_probabilities = []
+            for score in exponential_scores:
+                prob = score / total_exponential_score if total_exponential_score > 0 else 1 / len(horses)
+                prob = max(prob, HORSE_PROBABILITY_FLOOR)  # Apply probability floor
+                base_probabilities.append(prob)
+            
+            # Renormalize after applying floor
+            total_prob = sum(base_probabilities)
+            normalized_probs = [p / total_prob for p in base_probabilities]
+            logger.debug(f"Normalized base probabilities: {normalized_probs}")
             
             # Get bet type configuration
             if bet_type not in HORSE_RACE_BET_TYPES:
                 logger.error(f"Invalid bet_type: {bet_type}")
                 bet_type = "win"  # Fallback to win
             
-            # Apply house edge more aggressively to create realistic odds
+            # Calculate final odds based on bet type
             odds = {}
             for i, prob in enumerate(normalized_probs):
                 # Adjust probability based on bet type
@@ -341,7 +356,7 @@ class HorseRaceManager:
                     adjusted_prob = min(prob * 3, 0.95)  # Cap at 95%
                 elif bet_type == "last":
                     # For last place, invert the probability (worst horse has best chance to finish last)
-                    adjusted_prob = abs(1 - prob) / (len(horses) - 3)
+                    adjusted_prob = abs(1 - prob) / (len(horses) - 3)  # More realistic last place calculation
                 else:  # win
                     adjusted_prob = prob
                 
@@ -349,14 +364,14 @@ class HorseRaceManager:
                 house_adjusted_prob = adjusted_prob * (1 + HORSE_RACE_HOUSE_EDGE)
                 
                 # Convert to payout odds (what player receives per $1 bet)
-                payout_multiplier = 1 / house_adjusted_prob if house_adjusted_prob > 0 else 50.0
+                payout_multiplier = 1 / house_adjusted_prob if house_adjusted_prob > 0 else HORSE_ODDS_MAX_MULTIPLIER
                 
-                # Ensure minimum odds of 1.1 (slight profit) and maximum of 50 for longshots
-                payout_multiplier = max(1.1, min(50.0, payout_multiplier))
+                # Apply configured min/max bounds for realistic odds
+                payout_multiplier = max(HORSE_ODDS_MIN_MULTIPLIER, min(HORSE_ODDS_MAX_MULTIPLIER, payout_multiplier))
                 
                 odds[i + 1] = round(payout_multiplier, 1)
                 
-            logger.debug(f"Calculated odds for {bet_type}: {odds}")
+            logger.debug(f"Final calculated odds for {bet_type}: {odds}")
             return odds
             
         except Exception as e:
