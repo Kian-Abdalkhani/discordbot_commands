@@ -341,7 +341,7 @@ class HorseRaceManager:
                     adjusted_prob = min(prob * 3, 0.95)  # Cap at 95%
                 elif bet_type == "last":
                     # For last place, invert the probability (worst horse has best chance to finish last)
-                    adjusted_prob = abs(1 - prob) / (len(horses) - 1)
+                    adjusted_prob = abs(1 - prob) / (len(horses) - 3)
                 else:  # win
                     adjusted_prob = prob
                 
