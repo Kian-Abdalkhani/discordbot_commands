@@ -8,10 +8,34 @@ from discord.ext import commands
 from discord import app_commands
 import logging
 
-from src.config.settings import GUILD_ID
-from src.config.settings import BLACKJACK_PAYOUT_MULTIPLIER
+from src.config.settings import GUILD_ID, BLACKJACK_PAYOUT_MULTIPLIER, TRANSACTION_TYPES
 
 logger = logging.getLogger(__name__)
+
+class BlackjackGameState:
+    """Tracks the state of a blackjack game for transaction logging"""
+    def __init__(self, user_id: str, initial_bet: int):
+        self.user_id = user_id
+        self.initial_bet = initial_bet
+        self.total_bets = initial_bet  # Track total bets including doubles, splits
+        self.total_payout = 0
+        self.is_active = True
+    
+    def add_bet(self, amount: int):
+        """Add additional bet (for doubles, splits)"""
+        self.total_bets += amount
+        
+    def add_payout(self, amount: int):
+        """Add payout amount"""
+        self.total_payout += amount
+        
+    def calculate_profit_loss(self) -> float:
+        """Calculate net profit/loss for this game"""
+        return self.total_payout - self.total_bets
+        
+    def get_net_transaction_amount(self) -> float:
+        """Get the net amount for the transaction (positive = win, negative = loss, zero = push)"""
+        return self.total_payout - self.total_bets
 
 
 class BlackjackCog(commands.Cog):
@@ -26,6 +50,9 @@ class BlackjackCog(commands.Cog):
         
         # Initialize currency manager
         self.currency_manager = bot.currency_manager
+        
+        # Track active game states for transaction logging
+        self.active_games = {}  # {user_id: BlackjackGameState}
     
     async def cog_load(self):
         """Called when the cog is loaded"""
@@ -57,6 +84,59 @@ class BlackjackCog(commands.Cog):
         except Exception as e:
             logger.error(f"Error saving blackjack stats: {e}")
 
+    async def complete_blackjack_game(self, interaction: discord.Interaction, game_state: BlackjackGameState):
+        """Complete a blackjack game with proper transaction logging"""
+        try:
+            user_id = str(interaction.user.id)
+            net_amount = game_state.get_net_transaction_amount()
+            profit_loss = game_state.calculate_profit_loss()
+            
+            # Get user info for nickname tracking
+            display_name = interaction.user.display_name
+            mention = interaction.user.mention
+            
+            # Get current balance before transaction
+            balance_before = await self.currency_manager.get_balance(user_id)
+            balance_after = balance_before + net_amount
+            
+            # Create transaction metadata
+            metadata = {
+                "initial_bet": game_state.initial_bet,
+                "total_bets": game_state.total_bets,
+                "total_payout": game_state.total_payout,
+                "game_type": "blackjack"
+            }
+            
+            # Log the single transaction for this blackjack game
+            await self.currency_manager.transaction_logger.log_transaction(
+                user_id=user_id,
+                command="blackjack",
+                amount=net_amount,
+                balance_before=balance_before,
+                balance_after=balance_after,
+                profit_loss=profit_loss,
+                transaction_type=TRANSACTION_TYPES["gambling"],
+                metadata=metadata,
+                display_name=display_name,
+                mention=mention
+            )
+            
+            # Update the actual balance in currency manager (skip logging to avoid double logging)
+            if net_amount > 0:
+                await self.currency_manager.add_currency(user_id, int(net_amount), command="blackjack_complete", skip_logging=True)
+            elif net_amount < 0:
+                await self.currency_manager.subtract_currency(user_id, int(abs(net_amount)), command="blackjack_complete", skip_logging=True)
+            # For net_amount == 0 (push), no balance change needed
+            
+            # Remove game from active games
+            if user_id in self.active_games:
+                del self.active_games[user_id]
+                
+            logger.info(f"Completed blackjack game for {user_id}: bet={game_state.total_bets}, payout={game_state.total_payout}, profit_loss={profit_loss}")
+            
+        except Exception as e:
+            logger.error(f"Error completing blackjack game for {user_id}: {e}")
+
     @app_commands.command(name="blackjack", description="Plays a game of blackjack with betting")
     @app_commands.describe(bet="Amount to bet (default: 100)")
     async def blackjack(self, interaction: discord.Interaction, bet: int = 100):
@@ -86,7 +166,7 @@ class BlackjackCog(commands.Cog):
             return
         
         # Deduct bet from user's balance
-        success, new_balance = await self.currency_manager.subtract_currency(user_id, bet)
+        success, new_balance = await self.currency_manager.subtract_currency(user_id, bet, command="blackjack_bet")
         if not success:
             embed = discord.Embed(
                 title="❌ Transaction Failed",
@@ -186,12 +266,12 @@ class BlackjackCog(commands.Cog):
                 else:
                     # Regular win pays 2x (bet + bet)
                     payout = bet_amount * 2
-                await self.currency_manager.add_currency(user_id, payout)
+                await self.currency_manager.add_currency(user_id, payout, command="blackjack_win")
                 logger.info(f"Player {user_id} won ${payout} (bet: ${bet_amount}, blackjack: {is_blackjack})")
             elif result_type == "ties":
                 # Return the original bet
                 payout = bet_amount
-                await self.currency_manager.add_currency(user_id, payout)
+                await self.currency_manager.add_currency(user_id, payout, command="blackjack_win")
                 logger.info(f"Player {user_id} tied, returned ${payout}")
             # For losses, no payout (bet was already deducted)
             
@@ -281,7 +361,7 @@ class BlackjackCog(commands.Cog):
                         if hand_payout > 0:
                             # Reload currency data before adding payout
                             await self.currency_manager.load_currency_data()
-                            await self.currency_manager.add_currency(user_id, hand_payout)
+                            await self.currency_manager.add_currency(user_id, hand_payout, command="blackjack_win")
 
                     # Stats are updated individually per hand, no overall stats needed for split hands
                     
@@ -448,7 +528,7 @@ class BlackjackCog(commands.Cog):
                     elif str(reaction.emoji) == "2️⃣" and hand_can_double_down and first_decision:  # Double Down
                         # Double the bet for current hand
                         current_bet = split_bets[hand_index]
-                        success, new_balance = await self.currency_manager.subtract_currency(user_id, current_bet)
+                        success, new_balance = await self.currency_manager.subtract_currency(user_id, current_bet, command="blackjack_double")
                         if not success:
                             # This shouldn't happen since we checked balance, but handle it gracefully
                             await interaction.followup.send("❌ Unable to double down - insufficient funds!", ephemeral=True)
@@ -468,7 +548,7 @@ class BlackjackCog(commands.Cog):
                     
                     elif str(reaction.emoji) == "✂️" and can_split_hand and first_decision and not is_split:  # Split
                         # Check if user can afford to split
-                        success, new_balance = await self.currency_manager.subtract_currency(user_id, bet)
+                        success, new_balance = await self.currency_manager.subtract_currency(user_id, bet, command="blackjack_bet")
                         if not success:
                             await interaction.followup.send("❌ Unable to split - insufficient funds!", ephemeral=True)
                             await game_message.remove_reaction("✂️", user)

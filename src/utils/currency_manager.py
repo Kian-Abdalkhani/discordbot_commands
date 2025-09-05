@@ -6,7 +6,8 @@ import asyncio
 from datetime import datetime, timedelta, date
 from typing import Dict, Optional, Tuple, List
 
-from src.config.settings import DAILY_CLAIM, STOCK_MARKET_LEVERAGE, HANGMAN_DAILY_BONUS
+from src.config.settings import DAILY_CLAIM, STOCK_MARKET_LEVERAGE, HANGMAN_DAILY_BONUS, TRANSACTION_TYPES
+from src.utils.transaction_logger import TransactionLogger
 
 logger = logging.getLogger(__name__)
 
@@ -21,10 +22,12 @@ class CurrencyManager:
         self.currency_data = {}
         self._locks = {}  # Per-user locks for atomic operations
         self._global_lock = asyncio.Lock()  # Global lock for managing user locks
+        self.transaction_logger = TransactionLogger()
     
     async def initialize(self):
         """Initialize the currency manager by loading data"""
         await self.load_currency_data()
+        await self.transaction_logger.initialize()
     
     async def _get_user_lock(self, user_id: str) -> asyncio.Lock:
         """Get or create a lock for a specific user"""
@@ -90,28 +93,70 @@ class CurrencyManager:
         user_data = await self.get_user_data(user_id)
         return user_data["balance"]
     
-    async def add_currency(self, user_id: str, amount: int) -> float:
+    async def add_currency(self, user_id: str, amount: int, command: str = "add_currency", 
+                          metadata: Optional[Dict] = None, profit_loss: float = 0.0,
+                          transaction_type: str = "currency", display_name: Optional[str] = None,
+                          mention: Optional[str] = None, skip_logging: bool = False) -> float:
         """Add currency to user's balance. Returns new balance."""
         await self.load_currency_data()
         user_data = await self.get_user_data(user_id)
+        balance_before = user_data["balance"]
         user_data["balance"] += amount
+        balance_after = user_data["balance"]
         await self.save_currency_data()
+        
+        # Log the transaction with enhanced data (unless skipping logging)
+        if not skip_logging:
+            await self.transaction_logger.log_transaction(
+                user_id=user_id,
+                command=command,
+                amount=amount,
+                balance_before=balance_before,
+                balance_after=balance_after,
+                profit_loss=profit_loss,
+                transaction_type=transaction_type,
+                metadata=metadata,
+                display_name=display_name,
+                mention=mention
+            )
+        
         logger.info(f"Added ${amount} to user {user_id}. New balance: ${user_data['balance']}")
         return user_data["balance"]
     
-    async def subtract_currency(self, user_id: str, amount: int) -> Tuple[bool, float]:
+    async def subtract_currency(self, user_id: str, amount: int, command: str = "subtract_currency", 
+                               metadata: Optional[Dict] = None, profit_loss: float = 0.0,
+                               transaction_type: str = "currency", display_name: Optional[str] = None,
+                               mention: Optional[str] = None, skip_logging: bool = False) -> Tuple[bool, float]:
         """
         Subtract currency from user's balance.
         Returns (success, new_balance).
         """
         user_data = await self.get_user_data(user_id)
+        balance_before = user_data["balance"]
         
         if user_data["balance"] < amount:
             logger.warning(f"User {user_id} attempted to spend ${amount} but only has ${user_data['balance']}")
             return False, user_data["balance"]
         
         user_data["balance"] -= amount
+        balance_after = user_data["balance"]
         await self.save_currency_data()
+        
+        # Log the transaction with enhanced data (unless skipping logging)
+        if not skip_logging:
+            await self.transaction_logger.log_transaction(
+                user_id=user_id,
+                command=command,
+                amount=-amount,  # Negative amount for subtractions
+                balance_before=balance_before,
+                balance_after=balance_after,
+                profit_loss=profit_loss,
+                transaction_type=transaction_type,
+                metadata=metadata,
+                display_name=display_name,
+                mention=mention
+            )
+        
         logger.info(f"Subtracted ${amount} from user {user_id}. New balance: ${user_data['balance']}")
         return True, user_data["balance"]
     
@@ -126,13 +171,41 @@ class CurrencyManager:
         from_user_data = await self.get_user_data(from_user_id)
         to_user_data = await self.get_user_data(to_user_id)
         
+        from_balance_before = from_user_data["balance"]
+        to_balance_before = to_user_data["balance"]
+        
         if from_user_data["balance"] < amount:
             return False, f"Insufficient funds. You have ${from_user_data['balance']:,} but tried to send ${amount:,}."
         
         # Perform the transfer
         from_user_data["balance"] -= amount
         to_user_data["balance"] += amount
+        
+        from_balance_after = from_user_data["balance"]
+        to_balance_after = to_user_data["balance"]
+        
         await self.save_currency_data()
+        
+        # Log both sides of the transfer
+        transfer_metadata = {"recipient": to_user_id, "transfer_type": "send"}
+        await self.transaction_logger.log_transaction(
+            user_id=from_user_id,
+            command="transfer_send",
+            amount=-amount,
+            balance_before=from_balance_before,
+            balance_after=from_balance_after,
+            metadata=transfer_metadata
+        )
+        
+        receive_metadata = {"sender": from_user_id, "transfer_type": "receive"}
+        await self.transaction_logger.log_transaction(
+            user_id=to_user_id,
+            command="transfer_receive",
+            amount=amount,
+            balance_before=to_balance_before,
+            balance_after=to_balance_after,
+            metadata=receive_metadata
+        )
         
         logger.info(f"Transferred ${amount} from user {from_user_id} to user {to_user_id}")
         return True, f"Successfully transferred ${amount:,}!"
@@ -179,7 +252,8 @@ class CurrencyManager:
             return False, time_left, user_data["balance"]
         
         # Give daily bonus
-        new_balance = await self.add_currency(user_id, DAILY_CLAIM)
+        new_balance = await self.add_currency(user_id, DAILY_CLAIM, command="daily_bonus", 
+                                           transaction_type=TRANSACTION_TYPES["currency"])
         
         # Update last claim date
         user_data = await self.get_user_data(user_id)
@@ -234,7 +308,8 @@ class CurrencyManager:
                 return False, time_left, user_data["balance"]
             
             # Give hangman bonus
-            new_balance = await self.add_currency(user_id, HANGMAN_DAILY_BONUS)
+            new_balance = await self.add_currency(user_id, HANGMAN_DAILY_BONUS, command="hangman_bonus",
+                                                transaction_type=TRANSACTION_TYPES["currency"])
             
             # Update last claim date
             user_data = await self.get_user_data(user_id)
@@ -263,12 +338,14 @@ class CurrencyManager:
         investment_amount = (shares * price) / leverage
         
         user_data = await self.get_user_data(user_id)
+        balance_before = user_data["balance"]
         
         if user_data["balance"] < investment_amount:
             return False, f"Insufficient funds. You need ${investment_amount:,.2f} but have ${user_data['balance']:,.2f}."
         
         # Deduct investment amount from balance
         user_data["balance"] -= investment_amount
+        balance_after = user_data["balance"]
         
         # Add to portfolio
         portfolio = user_data["portfolio"]
@@ -276,7 +353,7 @@ class CurrencyManager:
             # Average the purchase price if buying more of the same stock
             existing_shares = portfolio[symbol]["shares"]
             existing_price = portfolio[symbol]["purchase_price"]
-            existing_leverage = STOCK_MARKET_LEVERAGE
+            existing_leverage = portfolio[symbol].get("leverage", STOCK_MARKET_LEVERAGE)
             
             # Only allow same leverage for additional purchases
             if existing_leverage != leverage:
@@ -288,6 +365,7 @@ class CurrencyManager:
             
             portfolio[symbol]["shares"] = total_shares
             portfolio[symbol]["purchase_price"] = weighted_price
+            portfolio[symbol]["leverage"] = leverage  # Ensure leverage is set correctly
         else:
             portfolio[symbol] = {
                 "shares": shares,
@@ -297,6 +375,26 @@ class CurrencyManager:
             }
         
         await self.save_currency_data()
+        
+        # Log the stock purchase transaction
+        stock_metadata = {
+            "symbol": symbol,
+            "shares": shares,
+            "price_per_share": price,
+            "leverage": leverage,
+            "total_value": shares * price,
+            "investment_amount": investment_amount
+        }
+        await self.transaction_logger.log_transaction(
+            user_id=user_id,
+            command="buy_stock",
+            amount=-investment_amount,
+            balance_before=balance_before,
+            balance_after=balance_after,
+            profit_loss=0.0,  # Stock purchases are investments, not profit/loss events
+            transaction_type=TRANSACTION_TYPES["investment"],
+            metadata=stock_metadata
+        )
         
         total_value = shares * price
         logger.info(f"User {user_id} bought {shares:,.2f} shares of {symbol} at ${price:.2f} with {leverage}x leverage")
@@ -312,6 +410,7 @@ class CurrencyManager:
         
         user_data = await self.get_user_data(user_id)
         portfolio = user_data["portfolio"]
+        balance_before = user_data["balance"]
         
         if symbol not in portfolio:
             return False, f"You don't own any shares of {symbol}.", 0.0
@@ -336,6 +435,7 @@ class CurrencyManager:
         
         # Add proceeds to balance
         user_data["balance"] += proceeds
+        balance_after = user_data["balance"]
         
         # Update portfolio
         if shares == owned_shares:
@@ -347,6 +447,28 @@ class CurrencyManager:
         
         await self.save_currency_data()
         
+        # Log the stock sale transaction
+        sell_metadata = {
+            "symbol": symbol,
+            "shares": shares,
+            "sale_price_per_share": current_price,
+            "purchase_price_per_share": purchase_price,
+            "leverage": leverage,
+            "proceeds": proceeds,
+            "total_profit": total_profit,
+            "investment_amount": investment_amount
+        }
+        await self.transaction_logger.log_transaction(
+            user_id=user_id,
+            command="sell_stock",
+            amount=proceeds,
+            balance_before=balance_before,
+            balance_after=balance_after,
+            profit_loss=total_profit,  # Actual profit/loss from the sale
+            transaction_type=TRANSACTION_TYPES["investment"],
+            metadata=sell_metadata
+        )
+        
         profit_percentage = (total_profit / investment_amount) * 100
         logger.info(f"User {user_id} sold {shares:,.2f} shares of {symbol} at ${current_price:.2f} for ${proceeds:.2f} profit/loss")
         
@@ -356,14 +478,6 @@ class CurrencyManager:
     async def get_portfolio(self, user_id: str) -> Dict:
         """Get user's stock portfolio"""
         user_data = await self.get_user_data(user_id)
-
-        # Ensure that portfolio leverage matches current configured leverage on the server:
-        for sym, data in user_data["portfolio"].items():
-            if data["leverage"] != STOCK_MARKET_LEVERAGE:
-                data["leverage"] = STOCK_MARKET_LEVERAGE
-                await self.save_currency_data()
-                user_data = await self.get_user_data(user_id)
-
         return user_data["portfolio"]
     
     async def check_and_liquidate_positions(self, user_id: str, current_prices: Dict[str, float]) -> List[str]:
@@ -445,7 +559,7 @@ class CurrencyManager:
             
             shares = position["shares"]
             purchase_price = position["purchase_price"]
-            leverage = STOCK_MARKET_LEVERAGE
+            leverage = position.get("leverage", STOCK_MARKET_LEVERAGE)
             current_price = current_prices[symbol]
             
             # Calculate the position value with leverage

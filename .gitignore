@@ -179,3 +179,4 @@ cython_debug/
 /.claude/
 CLAUDE.md
 /data/backups/*
+/.idea/dataSources.xml

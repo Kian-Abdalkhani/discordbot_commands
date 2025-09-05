@@ -8,6 +8,8 @@ from datetime import datetime, date, timedelta
 from typing import Dict, List, Optional, Tuple
 import concurrent.futures
 
+from src.config.settings import TRANSACTION_TYPES
+
 logger = logging.getLogger(__name__)
 
 class DividendManager:
@@ -238,7 +240,8 @@ class DividendManager:
                     shares = payout_info["shares"]
                     
                     # Add dividend to user balance
-                    await self.currency_manager.add_currency(user_id, payout)
+                    await self.currency_manager.add_currency(user_id, payout, command="dividend",
+                                                    profit_loss=payout, transaction_type=TRANSACTION_TYPES["investment"])
                     
                     # Track dividend earnings in currency manager
                     await self.currency_manager.record_dividend_payment(
