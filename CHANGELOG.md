@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.5.0](https://github.com/Kian-Abdalkhani/discordbot_commands/compare/discordbotv0.4.0...discordbotv0.5.0) (2025-09-06)
+
+
+### Features
+
+* add database for tracking cash flow and P/L ([0fd4dc0](https://github.com/Kian-Abdalkhani/discordbot_commands/commit/0fd4dc03f62863fb722abeac6c86f733cfbe2eec))
+
+
+### Bug Fixes
+
+* added logistic curve to horse_race_manager.py that is configured within settings.py ([d4674eb](https://github.com/Kian-Abdalkhani/discordbot_commands/commit/d4674eb2c65b1a05f9afc3723a582c5137dfb18f))
+* Updated last place payout for fairness ([4b56578](https://github.com/Kian-Abdalkhani/discordbot_commands/commit/4b5657881a41e0eb99c1025532afdc8afd49aecc))
+
+
+### Code Refactoring
+
+* grouped settings.py configurations by command group ([d750bf5](https://github.com/Kian-Abdalkhani/discordbot_commands/commit/d750bf5629f04f3b2258e85c63e1343924fa55d4))
+
 ## [0.4.0](https://github.com/Kian-Abdalkhani/discordbot_commands/compare/discordbotv0.3.0...discordbotv0.4.0) (2025-09-04)
 
 
