@@ -31,6 +31,10 @@ TRANSACTION_TYPES = {
 # /daily
 DAILY_CLAIM = 10_000 # $ amount users can claim daily
 
+# Admin Commands
+ADMIN_GIVE_MONEY_MAX_AMOUNT = 1_000_000  # Maximum amount admins can give in one transaction
+ADMIN_GIVE_MONEY_REASON_MAX_LENGTH = 500  # Maximum length for reason field
+
 # /blackjack
 BLACKJACK_PAYOUT_MULTIPLIER = 2.5 #blackjack payout multiplier (bet * payout) = gain
 
