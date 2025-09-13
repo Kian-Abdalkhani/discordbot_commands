@@ -115,7 +115,7 @@ HORSE_RACE_BET_TYPES = {
         "positions": [-1],  # Special case for last place
     }
 }
-HORSE_RACE_ALLOW_ADMIN_START = True #Set to True to allow admins to use /horserace_start command to manually trigger races
+HORSE_RACE_ALLOW_ADMIN_START = False #Set to True to allow admins to use /horserace_start command to manually trigger races
 HORSE_RACE_CHANNEL_ID = int(os.getenv("HORSE_RACE_CHANNEL_ID")) if os.getenv("HORSE_RACE_CHANNEL_ID") else None # for scheduled horse races
 HORSE_RACE_SCHEDULE = [
     {"day": 6, "hour": 20, "minute": 0}, # Sunday 8 PM
