@@ -585,7 +585,64 @@ class CurrencyManager:
             }
         
         return total_value, total_profit_loss, position_details
-    
+
+    async def calculate_net_worth(self, user_id: str, current_prices: Optional[Dict[str, float]] = None) -> Tuple[float, float, float]:
+        """
+        Calculate user's total net worth (cash + portfolio value).
+        Returns (net_worth, cash_balance, portfolio_value).
+        """
+        # Get cash balance
+        cash_balance = await self.get_balance(user_id)
+
+        # Get portfolio
+        portfolio = await self.get_portfolio(user_id)
+
+        # If no portfolio, net worth is just cash
+        if not portfolio:
+            return cash_balance, cash_balance, 0.0
+
+        # If current prices not provided, fetch them with error handling
+        if current_prices is None:
+            try:
+                from src.utils.stock_market_manager import StockMarketManager
+                stock_manager = StockMarketManager()
+                symbols = list(portfolio.keys())
+                current_prices = await stock_manager.get_multiple_prices(symbols)
+            except Exception as e:
+                logger.error(f"Error fetching stock prices for net worth calculation: {e}")
+                # Fall back to cash balance only if stock API fails
+                return cash_balance, cash_balance, 0.0
+
+        # Calculate portfolio value (just the investment value, not leveraged position value)
+        portfolio_value = 0.0
+        for symbol, position in portfolio.items():
+            try:
+                if symbol not in current_prices or current_prices[symbol] is None:
+                    continue
+
+                shares = position["shares"]
+                purchase_price = position["purchase_price"]
+                leverage = position.get("leverage", STOCK_MARKET_LEVERAGE)
+                current_price = current_prices[symbol]
+
+                # Calculate original investment amount
+                original_investment = (purchase_price * shares) / leverage
+
+                # Calculate profit/loss
+                price_change = current_price - purchase_price
+                profit_loss = price_change * shares
+
+                # Portfolio value is original investment + profit/loss
+                position_portfolio_value = original_investment + profit_loss
+                portfolio_value += position_portfolio_value
+            except Exception as e:
+                logger.error(f"Error calculating portfolio value for {symbol} for user {user_id}: {e}")
+                # Skip this position if there's an error but continue with others
+                continue
+
+        net_worth = cash_balance + portfolio_value
+        return net_worth, cash_balance, portfolio_value
+
     async def record_dividend_payment(self, user_id: str, symbol: str, amount: float, shares: float, ex_dividend_date: str) -> bool:
         """Record a dividend payment for a user"""
         try:

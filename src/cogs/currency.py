@@ -125,34 +125,150 @@ class CurrencyCog(commands.Cog):
         await interaction.response.send_message(embed=embed)
         logger.info(f"{interaction.user} attempted to send ${amount} to {user}: {message}")
     
-    @app_commands.command(name="leaderboard", description="Show the currency leaderboard")
+    @app_commands.command(name="leaderboard", description="Show the net worth leaderboard")
     async def leaderboard(self, interaction: discord.Interaction):
-        """Show currency leaderboard"""
+        """Show net worth leaderboard (cash + portfolio value)"""
+        await interaction.response.defer()
+
         await self.currency_manager.load_currency_data()
         # Get all users with currency data
         currency_data = self.currency_manager.currency_data
-        
+
         if not currency_data:
             embed = discord.Embed(
-                title="📊 Currency Leaderboard",
+                title="💰 Net Worth Leaderboard",
+                description="No users have currency data yet!",
+                color=discord.Color.blue()
+            )
+            await interaction.followup.send(embed=embed)
+            return
+
+        # Collect all unique stock symbols from all portfolios
+        all_symbols = set()
+        for user_data in currency_data.values():
+            portfolio = user_data.get("portfolio", {})
+            all_symbols.update(portfolio.keys())
+
+        # Fetch current prices for all symbols
+        current_prices = {}
+        if all_symbols:
+            try:
+                from src.utils.stock_market_manager import StockMarketManager
+                stock_manager = StockMarketManager()
+                current_prices = await stock_manager.get_multiple_prices(list(all_symbols))
+            except Exception as e:
+                logger.error(f"Error fetching stock prices for leaderboard: {e}")
+                # Continue with empty prices dict - individual calculations will handle fallbacks
+                current_prices = {}
+
+        # Calculate net worth for all users
+        user_net_worths = []
+        for user_id, user_data in currency_data.items():
+            try:
+                net_worth, cash_balance, portfolio_value = await self.currency_manager.calculate_net_worth(
+                    user_id, current_prices
+                )
+                user_net_worths.append((user_id, net_worth, cash_balance, portfolio_value))
+            except Exception as e:
+                logger.error(f"Error calculating net worth for user {user_id}: {e}")
+                # Fallback to cash balance only
+                cash_balance = user_data.get("balance", 0)
+                user_net_worths.append((user_id, cash_balance, cash_balance, 0.0))
+
+        # Sort users by net worth (descending)
+        sorted_users = sorted(user_net_worths, key=lambda x: x[1], reverse=True)
+
+        embed = discord.Embed(
+            title="💰 Net Worth Leaderboard",
+            color=discord.Color.gold()
+        )
+
+        # Show top 10 users
+        leaderboard_text = ""
+        for i, (user_id, net_worth, cash_balance, portfolio_value) in enumerate(sorted_users[:10], 1):
+            try:
+                # Get member from the guild to get server-specific name
+                member = interaction.guild.get_member(int(user_id))
+                if member:
+                    # Use display_name which shows server nickname or global display name
+                    username = member.display_name
+                else:
+                    # Fallback if member not found in guild - try cached user first
+                    user = self.bot.get_user(int(user_id))
+                    if user:
+                        username = user.display_name
+                    else:
+                        # Final fallback - fetch user from Discord API
+                        try:
+                            user = await self.bot.fetch_user(int(user_id))
+                            username = user.display_name
+                        except Exception as e:
+                            logger.debug(f"Failed to fetch user {user_id} from Discord API: {e}")
+                            username = f"User {user_id}"
+            except Exception as e:
+                logger.error(f"Error processing user {user_id} in leaderboard: {e}")
+                username = f"User {user_id}"
+
+            net_worth_formatted = self.currency_manager.format_balance(net_worth)
+
+            # Add medal emojis for top 3
+            if i == 1:
+                medal = "🥇"
+            elif i == 2:
+                medal = "🥈"
+            elif i == 3:
+                medal = "🥉"
+            else:
+                medal = f"{i}."
+
+            # Show only net worth total
+            leaderboard_text += f"{medal} {username}: {net_worth_formatted}\n"
+
+        embed.description = leaderboard_text
+
+        # Show current user's rank if not in top 10
+        user_id = str(interaction.user.id)
+        user_rank = next((i for i, (uid, _, _, _) in enumerate(sorted_users, 1) if uid == user_id), None)
+        if user_rank and user_rank > 10:
+            user_net_worth = next((nw for uid, nw, _, _ in sorted_users if uid == user_id), 0)
+            user_net_worth_formatted = self.currency_manager.format_balance(user_net_worth)
+            embed.add_field(
+                name="Your Rank",
+                value=f"#{user_rank}: {user_net_worth_formatted}",
+                inline=False
+            )
+
+        await interaction.followup.send(embed=embed)
+        logger.info(f"{interaction.user} viewed net worth leaderboard")
+
+    @app_commands.command(name="cash_leaderboard", description="Show the cash balance leaderboard")
+    async def cash_leaderboard(self, interaction: discord.Interaction):
+        """Show cash balance leaderboard (cash only, no portfolio)"""
+        await self.currency_manager.load_currency_data()
+        # Get all users with currency data
+        currency_data = self.currency_manager.currency_data
+
+        if not currency_data:
+            embed = discord.Embed(
+                title="💵 Cash Balance Leaderboard",
                 description="No users have currency data yet!",
                 color=discord.Color.blue()
             )
             await interaction.response.send_message(embed=embed)
             return
-        
+
         # Sort users by balance (descending)
         sorted_users = sorted(
             currency_data.items(),
             key=lambda x: x[1]["balance"],
             reverse=True
         )
-        
+
         embed = discord.Embed(
-            title="📊 Currency Leaderboard",
-            color=discord.Color.gold()
+            title="💵 Cash Balance Leaderboard",
+            color=discord.Color.green()
         )
-        
+
         # Show top 10 users
         leaderboard_text = ""
         for i, (user_id, data) in enumerate(sorted_users[:10], 1):
@@ -176,11 +292,11 @@ class CurrencyCog(commands.Cog):
                             logger.debug(f"Failed to fetch user {user_id} from Discord API: {e}")
                             username = f"User {user_id}"
             except Exception as e:
-                logger.error(f"Error processing user {user_id} in leaderboard: {e}")
+                logger.error(f"Error processing user {user_id} in cash leaderboard: {e}")
                 username = f"User {user_id}"
-            
+
             balance = self.currency_manager.format_balance(data["balance"])
-            
+
             # Add medal emojis for top 3
             if i == 1:
                 medal = "🥇"
@@ -190,11 +306,11 @@ class CurrencyCog(commands.Cog):
                 medal = "🥉"
             else:
                 medal = f"{i}."
-            
+
             leaderboard_text += f"{medal} {username}: {balance}\n"
-        
+
         embed.description = leaderboard_text
-        
+
         # Show current user's rank if not in top 10
         user_id = str(interaction.user.id)
         if user_id in currency_data:
@@ -206,10 +322,10 @@ class CurrencyCog(commands.Cog):
                     value=f"#{user_rank}: {user_balance}",
                     inline=False
                 )
-        
+
         await interaction.response.send_message(embed=embed)
-        logger.info(f"{interaction.user} viewed currency leaderboard")
-    
+        logger.info(f"{interaction.user} viewed cash balance leaderboard")
+
     @app_commands.command(name="test_user_lookup", description="Test user lookup functionality (diagnostic)")
     async def test_user_lookup(self, interaction: discord.Interaction):
         """Diagnostic command to test user lookup functionality"""
