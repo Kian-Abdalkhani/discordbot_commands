@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.0](https://github.com/Kian-Abdalkhani/discordbot_commands/compare/discordbotv0.5.0...discordbotv0.6.0) (2025-09-13)
+
+
+### Features
+
+* Added /give_money command so that admins can adjust player's balance without having to down the server. ([73e073d](https://github.com/Kian-Abdalkhani/discordbot_commands/commit/73e073dc2b0d0570bc8e12507bed6c0e4adbc9b8))
+
+
+### Bug Fixes
+
+* Configured so that admins can no longer manually start horse races ([c312f67](https://github.com/Kian-Abdalkhani/discordbot_commands/commit/c312f67b6837e1cb34ea3ba36995d1219233633a))
+
 ## [0.5.0](https://github.com/Kian-Abdalkhani/discordbot_commands/compare/discordbotv0.4.0...discordbotv0.5.0) (2025-09-06)
 
 
