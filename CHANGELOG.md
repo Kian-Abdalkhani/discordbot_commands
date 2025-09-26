@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/Kian-Abdalkhani/discordbot_commands/compare/discordbotv0.6.0...discordbotv0.7.0) (2025-09-26)
+
+
+### Features
+
+* /leaderboard takes into account net worth and created /cash_leaderboard for cash specific rankings ([67af855](https://github.com/Kian-Abdalkhani/discordbot_commands/commit/67af85581d939f658b3d159fc11a36a177cfc150))
+
 ## [0.6.0](https://github.com/Kian-Abdalkhani/discordbot_commands/compare/discordbotv0.5.0...discordbotv0.6.0) (2025-09-13)
 
 
