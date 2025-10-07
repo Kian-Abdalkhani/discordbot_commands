@@ -278,12 +278,13 @@ class TestDividendManager:
         manager = DividendManager(mock_currency_manager)
         manager.dividend_file = os.path.join(temp_data_dir, "dividends.json")
         await manager.initialize()
-        
-        today = date.today()
+
+        # Use yesterday's date since ex-dividend date must have fully passed
+        yesterday = date.today() - timedelta(days=1)
         mock_dividend_info = {
             "symbol": "AAPL",
             "pays_dividends": True,
-            "ex_dividend_date": today.isoformat(),
+            "ex_dividend_date": yesterday.isoformat(),
             "last_dividend_value": 0.25
         }
         

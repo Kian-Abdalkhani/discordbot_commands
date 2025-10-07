@@ -25,12 +25,72 @@ class DividendManager:
         self.cache = {}
         self.cache_expiry = {}
         self.cache_duration = timedelta(hours=1)  # Cache dividend data for 1 hour
+
+        # Background task for dividend processing
+        self._dividend_task = None
+        self.dividend_check_interval = 3600  # Check every hour (3600 seconds)
         
     async def initialize(self):
         """Initialize the dividend manager by loading data"""
         await self.load_dividend_data()
-        logger.info("DividendManager initialized")
-    
+        await self._start_dividend_loop()
+        logger.info("DividendManager initialized and dividend loop started")
+
+    async def _start_dividend_loop(self):
+        """Start the dividend processing loop"""
+        if self._dividend_task is None or self._dividend_task.done():
+            self._dividend_task = asyncio.create_task(self._dividend_loop())
+            logger.info("Dividend processing loop started")
+
+    async def _dividend_loop(self):
+        """Main dividend loop that checks and processes dividends periodically"""
+        while True:
+            try:
+                logger.info("Checking for new dividends...")
+                new_dividends = await self.check_for_new_dividends()
+
+                if new_dividends:
+                    logger.info(f"Found {len(new_dividends)} new dividends to process")
+                    for dividend in new_dividends:
+                        symbol = dividend["symbol"]
+                        amount = dividend["amount"]
+                        ex_date = dividend["ex_dividend_date"]
+
+                        logger.info(f"Processing dividend: {symbol} ${amount:.4f} ex-date {ex_date}")
+                        success = await self.process_dividend_payment(symbol, amount, ex_date)
+
+                        if success:
+                            logger.info(f"Successfully processed dividend for {symbol}")
+                        else:
+                            logger.error(f"Failed to process dividend for {symbol}")
+
+                        # Small delay between processing different dividends
+                        await asyncio.sleep(1)
+                else:
+                    logger.info("No new dividends found")
+
+                # Wait before next check
+                logger.info(f"Next dividend check in {self.dividend_check_interval} seconds")
+                await asyncio.sleep(self.dividend_check_interval)
+
+            except asyncio.CancelledError:
+                logger.info("Dividend loop cancelled")
+                break
+            except Exception as e:
+                logger.error(f"Error in dividend loop: {e}", exc_info=True)
+                # Wait a bit before retrying to avoid rapid error loops
+                await asyncio.sleep(300)  # 5 minutes
+
+    async def stop_dividend_loop(self):
+        """Stop the dividend loop"""
+        if self._dividend_task and not self._dividend_task.done():
+            self._dividend_task.cancel()
+            try:
+                await self._dividend_task
+            except asyncio.CancelledError:
+                pass
+            logger.info("Dividend loop stopped")
+
     async def load_dividend_data(self):
         """Load dividend data from JSON file"""
         try:
@@ -78,16 +138,25 @@ class DividendManager:
             if self._is_cache_valid(symbol):
                 return self.cache[symbol]
             
-            # Fetch from yfinance API in thread pool
+            # Fetch from yfinance API in thread pool with timeout
             loop = asyncio.get_event_loop()
             with concurrent.futures.ThreadPoolExecutor() as executor:
-                ticker = await loop.run_in_executor(executor, yf.Ticker, symbol.upper())
-                
-                # Get stock info for dividend yield and ex-dividend date
-                info = await loop.run_in_executor(executor, lambda: ticker.info)
-                
-                # Get historical dividends
-                dividends = await loop.run_in_executor(executor, lambda: ticker.dividends)
+                try:
+                    # Create ticker with timeout
+                    ticker_task = loop.run_in_executor(executor, yf.Ticker, symbol.upper())
+                    ticker = await asyncio.wait_for(ticker_task, timeout=10.0)
+
+                    # Get stock info for dividend yield and ex-dividend date with timeout
+                    info_task = loop.run_in_executor(executor, lambda: ticker.info)
+                    info = await asyncio.wait_for(info_task, timeout=10.0)
+
+                    # Get historical dividends with timeout
+                    dividends_task = loop.run_in_executor(executor, lambda: ticker.dividends)
+                    dividends = await asyncio.wait_for(dividends_task, timeout=10.0)
+
+                except asyncio.TimeoutError:
+                    logger.error(f"Timeout fetching dividend info for {symbol}")
+                    return None
                 
                 dividend_info = {
                     "symbol": symbol.upper(),
@@ -110,7 +179,7 @@ class DividendManager:
                         logger.warning(f"Could not parse ex-dividend date for {symbol}: {e}")
                 
                 # Process historical dividends
-                if not dividends.empty:
+                if dividends is not None and not dividends.empty:
                     dividend_info["pays_dividends"] = True
                     
                     # Get last 12 months of dividends
@@ -238,21 +307,24 @@ class DividendManager:
                 try:
                     payout = payout_info["payout"]
                     shares = payout_info["shares"]
-                    
-                    # Add dividend to user balance
-                    await self.currency_manager.add_currency(user_id, payout, command="dividend",
-                                                    profit_loss=payout, transaction_type=TRANSACTION_TYPES["investment"])
-                    
-                    # Track dividend earnings in currency manager
-                    await self.currency_manager.record_dividend_payment(
-                        user_id, symbol, payout, shares, ex_dividend_date
-                    )
-                    
-                    # Track dividend earnings in dividend manager
-                    await self._record_dividend_earning(user_id, symbol, payout)
-                    
-                    total_paid += payout
-                    successful_payments += 1
+
+                    # Get user-specific lock to prevent race conditions
+                    user_lock = await self.currency_manager._get_user_lock(user_id)
+                    async with user_lock:
+                        # Add dividend to user balance
+                        await self.currency_manager.add_currency(user_id, payout, command="dividend",
+                                                        profit_loss=payout, transaction_type=TRANSACTION_TYPES["investment"])
+
+                        # Track dividend earnings in currency manager
+                        await self.currency_manager.record_dividend_payment(
+                            user_id, symbol, payout, shares, ex_dividend_date
+                        )
+
+                        # Track dividend earnings in dividend manager
+                        await self._record_dividend_earning(user_id, symbol, payout)
+
+                        total_paid += payout
+                        successful_payments += 1
                     
                     logger.info(f"Paid dividend ${payout:.2f} to user {user_id} for {shares} shares of {symbol}")
                     
@@ -389,9 +461,9 @@ class DividendManager:
                         dividend_key = f"{symbol}_{ex_div_date}_{dividend_amount}"
                         
                         if dividend_key not in self.dividend_data.get("processed_dividends", {}):
-                            # Check if ex-dividend date has passed
+                            # Check if ex-dividend date has passed (must be fully past, not today)
                             ex_div_date_obj = date.fromisoformat(ex_div_date)
-                            if ex_div_date_obj <= date.today():
+                            if ex_div_date_obj < date.today():
                                 new_dividends.append({
                                     "symbol": symbol,
                                     "ex_dividend_date": ex_div_date,

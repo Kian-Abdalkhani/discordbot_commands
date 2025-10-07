@@ -329,13 +329,13 @@ class TestDividendIntegration:
         currency_manager = dividend_manager.currency_manager
         
         original_add_currency = currency_manager.add_currency
-        
+
         # Mock add_currency to fail for user1 but succeed for user2
-        async def failing_add_currency(user_id, amount):
+        async def failing_add_currency(user_id, amount, **kwargs):
             if user_id == "user1":
                 raise Exception("Payment system down")
-            return await original_add_currency(user_id, amount)
-        
+            return await original_add_currency(user_id, amount, **kwargs)
+
         currency_manager.add_currency = failing_add_currency
         
         # Process dividend
