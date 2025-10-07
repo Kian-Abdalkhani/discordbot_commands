@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/Kian-Abdalkhani/discordbot_commands/compare/discordbotv0.7.0...discordbotv0.7.1) (2025-10-07)
+
+
+### Bug Fixes
+
+* Removed issue with dividend payments not properly paying out to shareholders. ([a672467](https://github.com/Kian-Abdalkhani/discordbot_commands/commit/a67246728195bb123d3c950214c63cdaf721da32))
+
 ## [0.7.0](https://github.com/Kian-Abdalkhani/discordbot_commands/compare/discordbotv0.6.0...discordbotv0.7.0) (2025-09-26)
 
 
