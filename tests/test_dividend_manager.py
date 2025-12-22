@@ -3,6 +3,7 @@ import json
 import os
 import tempfile
 import shutil
+import asyncio
 from unittest.mock import MagicMock, patch, AsyncMock
 from datetime import datetime, date, timedelta
 from src.utils.dividend_manager import DividendManager
@@ -58,6 +59,20 @@ class TestDividendManager:
         mock_manager.add_currency.return_value = None
         mock_manager.record_dividend_payment.return_value = True
         mock_manager.load_currency_data.return_value = None
+        
+        # Configure _get_user_lock to return real asyncio.Lock objects
+        # This is critical for proper synchronization in tests to prevent race conditions
+        # Note: We omit the global lock (used for lock dictionary management) from this simplified
+        # implementation since tests access locks sequentially during setup, even though they may
+        # run concurrent operations afterward
+        user_locks = {}
+        async def get_user_lock(user_id):
+            if user_id not in user_locks:
+                user_locks[user_id] = asyncio.Lock()
+            return user_locks[user_id]
+        
+        mock_manager._get_user_lock.side_effect = get_user_lock
+        
         return mock_manager
 
     # Test Core Dividend Manager Functionality
@@ -297,6 +312,37 @@ class TestDividendManager:
             dividend = result[0]
             assert dividend["symbol"] == "AAPL"
             assert dividend["amount"] == 0.25
+
+    @pytest.mark.asyncio
+    async def test_user_lock_returns_real_lock(self, mock_currency_manager):
+        """Test that _get_user_lock returns a real asyncio.Lock for proper synchronization"""
+        # Get lock for the same user twice
+        lock1 = await mock_currency_manager._get_user_lock("user1")
+        lock2 = await mock_currency_manager._get_user_lock("user1")
+        
+        # Should be the same lock object (not a new mock each time)
+        assert lock1 is lock2
+        
+        # Should be a real asyncio.Lock, not an AsyncMock
+        assert isinstance(lock1, asyncio.Lock)
+        assert not isinstance(lock1, AsyncMock)
+        
+        # Test that the lock actually provides synchronization
+        counter = {"value": 0}
+        
+        async def increment_with_lock():
+            async with lock1:
+                current = counter["value"]
+                # Use 0.01s sleep to ensure race conditions are detectable across various system loads
+                # Shorter durations (e.g., 0.001s) may not reliably expose race conditions on fast systems
+                await asyncio.sleep(0.01)
+                counter["value"] = current + 1
+        
+        # Run multiple increments concurrently
+        await asyncio.gather(*[increment_with_lock() for _ in range(10)])
+        
+        # Should be exactly 10 due to proper locking
+        assert counter["value"] == 10
 
     @pytest.mark.asyncio
     async def test_save_and_load_data(self, temp_data_dir, mock_currency_manager):
