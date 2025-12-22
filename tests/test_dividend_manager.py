@@ -62,8 +62,9 @@ class TestDividendManager:
         
         # Configure _get_user_lock to return real asyncio.Lock objects
         # This is critical for proper synchronization in tests to prevent race conditions
-        # Note: In tests, we omit the global lock synchronization from the real CurrencyManager._get_user_lock
-        # because the simplified single-threaded test environment doesn't require it
+        # Note: We omit the global lock (used for lock dictionary management) from this simplified
+        # implementation since tests access locks sequentially during setup, even though they may
+        # run concurrent operations afterward
         user_locks = {}
         async def get_user_lock(user_id):
             if user_id not in user_locks:
