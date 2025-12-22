@@ -61,7 +61,9 @@ class TestDividendManager:
         mock_manager.load_currency_data.return_value = None
         
         # Configure _get_user_lock to return real asyncio.Lock objects
-        # This is critical for proper synchronization in tests
+        # This is critical for proper synchronization in tests to prevent race conditions
+        # Note: In tests, we omit the global lock synchronization from the real CurrencyManager._get_user_lock
+        # because the simplified single-threaded test environment doesn't require it
         user_locks = {}
         async def get_user_lock(user_id):
             if user_id not in user_locks:
@@ -330,7 +332,9 @@ class TestDividendManager:
         async def increment_with_lock():
             async with lock1:
                 current = counter["value"]
-                await asyncio.sleep(0.01)  # Simulate some work with longer duration for reliable testing
+                # Use 0.01s sleep to ensure race conditions are detectable across various system loads
+                # Shorter durations (e.g., 0.001s) may not reliably expose race conditions on fast systems
+                await asyncio.sleep(0.01)
                 counter["value"] = current + 1
         
         # Run multiple increments concurrently
