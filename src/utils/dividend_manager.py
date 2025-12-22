@@ -308,23 +308,21 @@ class DividendManager:
                     payout = payout_info["payout"]
                     shares = payout_info["shares"]
 
-                    # Get user-specific lock to prevent race conditions
-                    user_lock = await self.currency_manager._get_user_lock(user_id)
-                    async with user_lock:
-                        # Add dividend to user balance
-                        await self.currency_manager.add_currency(user_id, payout, command="dividend",
-                                                        profit_loss=payout, transaction_type=TRANSACTION_TYPES["investment"])
+                    # Add dividend to user balance
+                    # Note: add_currency now handles locking internally
+                    await self.currency_manager.add_currency(user_id, payout, command="dividend",
+                                                    profit_loss=payout, transaction_type=TRANSACTION_TYPES["investment"])
 
-                        # Track dividend earnings in currency manager
-                        await self.currency_manager.record_dividend_payment(
-                            user_id, symbol, payout, shares, ex_dividend_date
-                        )
+                    # Track dividend earnings in currency manager
+                    await self.currency_manager.record_dividend_payment(
+                        user_id, symbol, payout, shares, ex_dividend_date
+                    )
 
-                        # Track dividend earnings in dividend manager
-                        await self._record_dividend_earning(user_id, symbol, payout)
+                    # Track dividend earnings in dividend manager
+                    await self._record_dividend_earning(user_id, symbol, payout)
 
-                        total_paid += payout
-                        successful_payments += 1
+                    total_paid += payout
+                    successful_payments += 1
                     
                     logger.info(f"Paid dividend ${payout:.2f} to user {user_id} for {shares} shares of {symbol}")
                     

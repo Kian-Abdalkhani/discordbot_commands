@@ -98,30 +98,33 @@ class CurrencyManager:
                           transaction_type: str = "currency", display_name: Optional[str] = None,
                           mention: Optional[str] = None, skip_logging: bool = False) -> float:
         """Add currency to user's balance. Returns new balance."""
-        await self.load_currency_data()
-        user_data = await self.get_user_data(user_id)
-        balance_before = user_data["balance"]
-        user_data["balance"] += amount
-        balance_after = user_data["balance"]
-        await self.save_currency_data()
-        
-        # Log the transaction with enhanced data (unless skipping logging)
-        if not skip_logging:
-            await self.transaction_logger.log_transaction(
-                user_id=user_id,
-                command=command,
-                amount=amount,
-                balance_before=balance_before,
-                balance_after=balance_after,
-                profit_loss=profit_loss,
-                transaction_type=transaction_type,
-                metadata=metadata,
-                display_name=display_name,
-                mention=mention
-            )
-        
-        logger.info(f"Added ${amount} to user {user_id}. New balance: ${user_data['balance']}")
-        return user_data["balance"]
+        # Use user-specific lock to prevent race conditions
+        user_lock = await self._get_user_lock(user_id)
+        async with user_lock:
+            await self.load_currency_data()
+            user_data = await self.get_user_data(user_id)
+            balance_before = user_data["balance"]
+            user_data["balance"] += amount
+            balance_after = user_data["balance"]
+            await self.save_currency_data()
+            
+            # Log the transaction with enhanced data (unless skipping logging)
+            if not skip_logging:
+                await self.transaction_logger.log_transaction(
+                    user_id=user_id,
+                    command=command,
+                    amount=amount,
+                    balance_before=balance_before,
+                    balance_after=balance_after,
+                    profit_loss=profit_loss,
+                    transaction_type=transaction_type,
+                    metadata=metadata,
+                    display_name=display_name,
+                    mention=mention
+                )
+            
+            logger.info(f"Added ${amount} to user {user_id}. New balance: ${user_data['balance']}")
+            return user_data["balance"]
     
     async def subtract_currency(self, user_id: str, amount: int, command: str = "subtract_currency", 
                                metadata: Optional[Dict] = None, profit_loss: float = 0.0,
@@ -131,34 +134,37 @@ class CurrencyManager:
         Subtract currency from user's balance.
         Returns (success, new_balance).
         """
-        user_data = await self.get_user_data(user_id)
-        balance_before = user_data["balance"]
-        
-        if user_data["balance"] < amount:
-            logger.warning(f"User {user_id} attempted to spend ${amount} but only has ${user_data['balance']}")
-            return False, user_data["balance"]
-        
-        user_data["balance"] -= amount
-        balance_after = user_data["balance"]
-        await self.save_currency_data()
-        
-        # Log the transaction with enhanced data (unless skipping logging)
-        if not skip_logging:
-            await self.transaction_logger.log_transaction(
-                user_id=user_id,
-                command=command,
-                amount=-amount,  # Negative amount for subtractions
-                balance_before=balance_before,
-                balance_after=balance_after,
-                profit_loss=profit_loss,
-                transaction_type=transaction_type,
-                metadata=metadata,
-                display_name=display_name,
-                mention=mention
-            )
-        
-        logger.info(f"Subtracted ${amount} from user {user_id}. New balance: ${user_data['balance']}")
-        return True, user_data["balance"]
+        # Use user-specific lock to prevent race conditions
+        user_lock = await self._get_user_lock(user_id)
+        async with user_lock:
+            user_data = await self.get_user_data(user_id)
+            balance_before = user_data["balance"]
+            
+            if user_data["balance"] < amount:
+                logger.warning(f"User {user_id} attempted to spend ${amount} but only has ${user_data['balance']}")
+                return False, user_data["balance"]
+            
+            user_data["balance"] -= amount
+            balance_after = user_data["balance"]
+            await self.save_currency_data()
+            
+            # Log the transaction with enhanced data (unless skipping logging)
+            if not skip_logging:
+                await self.transaction_logger.log_transaction(
+                    user_id=user_id,
+                    command=command,
+                    amount=-amount,  # Negative amount for subtractions
+                    balance_before=balance_before,
+                    balance_after=balance_after,
+                    profit_loss=profit_loss,
+                    transaction_type=transaction_type,
+                    metadata=metadata,
+                    display_name=display_name,
+                    mention=mention
+                )
+            
+            logger.info(f"Subtracted ${amount} from user {user_id}. New balance: ${user_data['balance']}")
+            return True, user_data["balance"]
     
     async def transfer_currency(self, from_user_id: str, to_user_id: str, amount: int) -> Tuple[bool, str]:
         """
