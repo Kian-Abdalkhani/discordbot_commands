@@ -330,7 +330,7 @@ class TestDividendManager:
         async def increment_with_lock():
             async with lock1:
                 current = counter["value"]
-                await asyncio.sleep(0.001)  # Simulate some work
+                await asyncio.sleep(0.01)  # Simulate some work with longer duration for reliable testing
                 counter["value"] = current + 1
         
         # Run multiple increments concurrently
